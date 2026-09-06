@@ -16,7 +16,7 @@
  * rule, kartBox for the claims kart mask ({ x, y, w, h } px and { nx, ny, nw, nh } fractions),
  * state (the race state), missingAssets, stamp and round for the debugger.
  */
-import { REST_PITCH_DEG } from '../kart/camera.js?v=r5-20260906181225';   // the chase camera's real rest pitch (round 2: -3.1; round 0 hard coded -6.8 here)
+import { REST_PITCH_DEG } from '../kart/camera.js?v=r6-20260906191941';   // the chase camera's real rest pitch (round 2: -3.1; round 0 hard coded -6.8 here)
 export { REST_PITCH_DEG };
 
 class FpsMeter {
@@ -52,7 +52,7 @@ export function createTelemetry({ renderer, player, bodies = [], race = null, it
   const boxList = items && items.boxes && Array.isArray(items.boxes.boxes) ? items.boxes.boxes : null;
   if (boxList) G.item_boxes = boxList.map((b) => ({ x: round2(b.x), z: round2(b.z), up: true }));
   const nameOf = (id) => {
-    if (!names) return id === (player && player.id) ? 'Marisol' : `Racer ${id}`;
+    if (!names) return id === (player && player.id) ? 'Rafa' : `Racer ${id}`;
     if (typeof names.get === 'function') return names.get(id) || `Racer ${id}`;
     return names[id] || `Racer ${id}`;
   };

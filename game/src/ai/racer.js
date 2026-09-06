@@ -34,23 +34,23 @@ export const KART_DEFAULTS = {
 
 /**
  * The seven named AI racers. Fixed seeds: the field is the same every race. ids follow the
- * style lock livery table (1 is the player, Marisol). Liveries repeated here so main.js can
+ * style lock livery table (1 is the player, Rafa). Liveries repeated here so main.js can
  * build KartView from this table alone.
  */
 export const PERSONALITIES = [
-  { id: 2, name: 'Bruno',  offset: -1.0, skill: 0.98, aggression: 0.90, itemDelay: 0.7,
+  { id: 2, name: 'Bastian',  offset: -1.0, skill: 0.98, aggression: 0.90, itemDelay: 0.7,
     livery: { body: 0x2f5fc4, suit: 0x2f5fc4, helmet: 0xf1e6d2, stripe: 0x2f5fc4 } },
-  { id: 3, name: 'Kiko',   offset:  3.0, skill: 0.88, aggression: 0.50, itemDelay: 1.4,
+  { id: 3, name: 'Suvi',   offset:  3.0, skill: 0.88, aggression: 0.50, itemDelay: 1.4,
     livery: { body: 0xf2c230, suit: 0x3a3f46, helmet: 0xf2c230, stripe: 0xf2c230 } },
-  { id: 4, name: 'Odette', offset: -2.5, skill: 1.00, aggression: 0.30, itemDelay: 1.0,
+  { id: 4, name: 'Ingrid', offset: -2.5, skill: 1.00, aggression: 0.30, itemDelay: 1.0,
     livery: { body: 0x3fc7a0, suit: 0xf1e6d2, helmet: 0x3fc7a0, stripe: 0x3fc7a0 } },
-  { id: 5, name: 'Tariq',  offset:  1.0, skill: 0.94, aggression: 0.80, itemDelay: 0.6,
+  { id: 5, name: 'Nadir',  offset:  1.0, skill: 0.94, aggression: 0.80, itemDelay: 0.6,
     livery: { body: 0x7a4fc9, suit: 0x7a4fc9, helmet: 0xf1e6d2, stripe: 0x7a4fc9 } },
-  { id: 6, name: 'Lena',   offset: -3.5, skill: 0.92, aggression: 0.60, itemDelay: 0.9,
+  { id: 6, name: 'Halle',   offset: -3.5, skill: 0.92, aggression: 0.60, itemDelay: 0.9,
     livery: { body: 0xf07a2a, suit: 0xf1e6d2, helmet: 0xf07a2a, stripe: 0xf07a2a } },
-  { id: 7, name: 'Saul',   offset:  2.0, skill: 0.90, aggression: 0.20, itemDelay: 1.5,
+  { id: 7, name: 'Vito',   offset:  2.0, skill: 0.90, aggression: 0.20, itemDelay: 1.5,
     livery: { body: 0x1f8fa0, suit: 0x3a3f46, helmet: 0x1f8fa0, stripe: 0x1f8fa0 } },
-  { id: 8, name: 'Pip',    offset:  3.5, skill: 0.86, aggression: 0.70, itemDelay: 1.2,
+  { id: 8, name: 'Zola',    offset:  3.5, skill: 0.86, aggression: 0.70, itemDelay: 1.2,
     livery: { body: 0xf1e6d2, suit: 0xed5851, helmet: 0xf1e6d2, stripe: 0xed5851 } },
 ];
 
@@ -401,7 +401,7 @@ export class AIRacer {
       // the road in the first test.
       // Physics re-reads the drift side from the steer sign on EVERY hop frame until it lands,
       // and on the 16% lighthouse descent the hop lands late; a fixed 0.4 s of forced steer let a
-      // pursuit correction flip a right drift to a left one and put Kiko in the sea. Hold the
+      // pursuit correction flip a right drift to a left one and put Suvi in the sea. Hold the
       // side until the drift is locked (or the 0.7 s lock failure releases it).
       const locked = !!(b.drift && b.drift.active);
       if (!locked) steer = this.drift.dir * Math.max(0.35, steer * this.drift.dir);

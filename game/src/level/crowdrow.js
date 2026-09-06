@@ -29,7 +29,7 @@
  *     0.35 m behind it).
  */
 
-import { applyCardDepth } from '../render/materials.js?v=r5-20260906181225';
+import { applyCardDepth } from '../render/materials.js?v=r6-20260906191941';
 
 // deterministic per instance: a small hash on the seed and a stream index, no rng state to keep in step
 function h01(seed, k) {

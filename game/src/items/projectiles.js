@@ -20,7 +20,7 @@
  * sign convention of the spline's normal never matters here.
  */
 import * as THREE from 'three';
-import { InstancePool, INERT_STATES, idOf } from './boxes.js?v=r5-20260906181225';
+import { InstancePool, INERT_STATES, idOf } from './boxes.js?v=r6-20260906191941';
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _n = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _axis = new THREE.Vector3(), _e = new THREE.Euler();

@@ -30,7 +30,7 @@
  * with the aerial perspective like the sea.
  */
 import * as THREE from 'three';
-import { sunDirection } from '../render/lighting.js?v=r5-20260906181225';
+import { sunDirection } from '../render/lighting.js?v=r6-20260906191941';
 
 const HIDDEN = new THREE.Matrix4().makeScale(1e-6, 1e-6, 1e-6).setPosition(0, -1000, 0);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _e = new THREE.Euler();

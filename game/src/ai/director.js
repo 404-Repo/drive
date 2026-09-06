@@ -16,7 +16,7 @@
  *   new Director({ racers: AIRacer[], player: KartBody, spline })
  *   update(dt); standings() => [{ id, position, raceProgress }]; personalities
  */
-import { PERSONALITIES, lapLengthOf } from './racer.js?v=r5-20260906181225';
+import { PERSONALITIES, lapLengthOf } from './racer.js?v=r6-20260906191941';
 
 export const RUBBER = {
   range: 120,        // m over which the band ramps to its cap

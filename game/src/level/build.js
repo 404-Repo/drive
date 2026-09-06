@@ -22,11 +22,11 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r5-20260906181225';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r5-20260906181225';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements, nearest } from './placements.js?v=r5-20260906181225';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r5-20260906181225';
-import { stackCrowd, makeCrowdFront, FRONT_SPECS, seedOf } from './crowdrow.js?v=r5-20260906181225';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r6-20260906191941';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r6-20260906191941';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements, nearest } from './placements.js?v=r6-20260906191941';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r6-20260906191941';
+import { stackCrowd, makeCrowdFront, FRONT_SPECS, seedOf } from './crowdrow.js?v=r6-20260906191941';
 
 // Round 5 (targeted, crowd depth): every spectator_group is re seated as three card layers 0.3 m back and up
 // (crowdrow.js stackCrowd, near instance and far copies alike), and a modelled front row of figures stands on the

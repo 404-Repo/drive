@@ -94,7 +94,7 @@ export class Race {
 
   nameOf(id) {
     const n = this._names;
-    if (!n) return id === this.playerId ? 'Marisol' : `Racer ${id}`;
+    if (!n) return id === this.playerId ? 'Rafa' : `Racer ${id}`;
     if (typeof n.get === 'function') return n.get(id) || `Racer ${id}`;
     return n[id] || `Racer ${id}`;
   }

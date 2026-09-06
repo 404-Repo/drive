@@ -164,7 +164,7 @@ export class Screens {
     this.load = get('load', `<div id="load">${TITLE}<div class="track">Sorrel Cove</div>
       <div class="sub">Sunset coastal circuit. ${racers} racers. ${laps} laps.</div>
       <div class="bar"><div class="fill"></div></div><div class="lbl pix">Loading</div>
-      <div class="credit pix">404 GEN<br>Build ${esc(round)}${stamp}<br>github.com/404-Repo/drive</div></div>`);
+      <div class="credit pix">404—GEN<br>Build ${esc(round)}${stamp}<br>github.com/404-Repo/drive</div></div>`);
     const keys = isTouchDevice()
       ? '<span class="pix">Steer</span><span>Left and right pads, bottom left</span><span class="pix">Drift</span><span>Hold DRIFT while steering, release for a boost</span><span class="pix">Item</span><span>ITEM button</span><span class="pix">Brake</span><span>Hold BRAKE. The kart accelerates on its own</span>'
       : '<span class="pix">Accelerate</span><span>Up arrow or W</span><span class="pix">Brake, reverse</span><span>Down arrow or S</span><span class="pix">Steer</span><span>Left and right arrows or A and D</span><span class="pix">Hop, drift</span><span>Space. Hold with steer, release for a boost</span><span class="pix">Item</span><span>Shift or E. Hold brake to fire backwards</span><span class="pix">Pause</span><span>Esc</span>';
@@ -174,9 +174,9 @@ export class Screens {
       <div class="meta"><i>${laps}</i> laps <i>-</i> <i>${racers}</i> racers <i>-</i> <i>${lapMetres}</i> m a lap</div>
       <div class="keys">${keys}</div>
       <button id="startb" type="button">Start</button></div>
-      <div class="foot pix"><span>404 GEN</span><span>Build ${esc(round)}${stamp}</span><span>Subnet 17</span></div></div>`);
-    this.pauseEl = get('pause', `<div id="pause"><div class="pan"></div><div class="foot pix"><span>404 GEN</span><span>Build ${esc(round)}</span><span>Paused</span></div></div>`);
-    this.over = get('over', `<div id="over"><div class="pan"></div><div class="foot pix"><span>404 GEN</span><span>Build ${esc(round)}${stamp}</span><span>Sorrel Cove</span></div></div>`);
+      <div class="foot pix"><span>404—GEN</span><span>Build ${esc(round)}${stamp}</span><span>Subnet 17</span></div></div>`);
+    this.pauseEl = get('pause', `<div id="pause"><div class="pan"></div><div class="foot pix"><span>404—GEN</span><span>Build ${esc(round)}</span><span>Paused</span></div></div>`);
+    this.over = get('over', `<div id="over"><div class="pan"></div><div class="foot pix"><span>404—GEN</span><span>Build ${esc(round)}${stamp}</span><span>Sorrel Cove</span></div></div>`);
     this.pausePan = this.pauseEl.querySelector('.pan');
     this.pan = this.over.querySelector('.pan');
     this.startb = this.start.querySelector('#startb');

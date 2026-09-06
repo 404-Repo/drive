@@ -90,9 +90,9 @@
  *     and a few dust puffs leave the wheel.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r5-20260906181225';
-import { KART } from './physics.js?v=r5-20260906181225';
-import { CHASE } from './camera.js?v=r5-20260906181225';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r6-20260906191941';
+import { KART } from './physics.js?v=r6-20260906191941';
+import { CHASE } from './camera.js?v=r6-20260906191941';
 
 const SPARK_COLOURS = [0xff8a2a, 0xff8a2a, 0xffd23a, 0xd6e6ff];   // index by tier (0 unused): round 4, orange, yellow, blue white (Ben's direction)
 const FLARE_COLOUR = 0xffc48a;
@@ -207,7 +207,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r5-20260906181225');
+      const m = await import('../render/materials.js?v=r6-20260906191941');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;

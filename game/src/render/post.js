@@ -27,7 +27,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r5-20260906181225';
+import { getTier } from './quality.js?v=r6-20260906191941';
 
 /**
  * Bloom threshold in linear HDR. Round 1: lit whitewash measured 0.62 to 0.72 and the threshold was 0.92. Round 2

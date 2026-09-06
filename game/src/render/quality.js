@@ -5,7 +5,7 @@
  * them through `tier.density`, `tier.castDist`, `tier.cardsFar` and so on rather than re-deciding
  * what a phone can do.
  *
- *   import { TIERS, detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r5-20260906181225';
+ *   import { TIERS, detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r6-20260906191941';
  *   const tierName = detectTier();          // 'high' | 'phone'
  *   const tier = getTier(tierName);         // the TIERS entry, with .name attached
  *

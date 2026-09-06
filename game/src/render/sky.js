@@ -32,8 +32,8 @@
  *   const sky = await createSky(THREE, { scene, renderer, tier });
  *   sky.update(camera, dt);   per frame
  */
-import { sunDirection, SUN_COLOR, SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG, ATMOS_UNIFORMS_GLSL, ATMOS_GLSL, atmosUniforms, applyAtmosFit } from './lighting.js?v=r5-20260906181225';
-import { getTier } from './quality.js?v=r5-20260906181225';
+import { sunDirection, SUN_COLOR, SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG, ATMOS_UNIFORMS_GLSL, ATMOS_GLSL, atmosUniforms, applyAtmosFit } from './lighting.js?v=r6-20260906191941';
+import { getTier } from './quality.js?v=r6-20260906191941';
 
 /** Linear radiance = decoded panorama x SKY_GAIN. Solved so the sky band at 35 degrees lands near the bar's 185 to 205 sRGB luma. */
 export const SKY_GAIN = 1.25;   // r1 1.05: round 2 raised the sun to 12 (lighting.js), so the sky and its cloud tops follow (cloud tops 235 to 245 sRGB, the 35 degree band about 205)
