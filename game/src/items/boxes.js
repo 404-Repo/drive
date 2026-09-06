@@ -38,8 +38,8 @@
  */
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { ASSET } from '../../assetlib.js?v=r2-20260906125925';
-import { applyMaterials } from '../render/materials.js?v=r2-20260906125925';
+import { ASSET } from '../../assetlib.js?v=r3-20260906150928';
+import { applyMaterials } from '../render/materials.js?v=r3-20260906150928';
 
 const HIDDEN = new THREE.Matrix4().makeScale(1e-6, 1e-6, 1e-6).setPosition(0, -1000, 0);
 const _m = new THREE.Matrix4(), _im = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -234,8 +234,6 @@ export function idOf(body, index = 0) {
 }
 
 const ROW_RADIUS = 12;   // m: boxes closer than this belong to one row (a planned row plus its staggered second row)
-const CORNER_TILT = Math.atan(Math.SQRT2);   // a cube standing on a vertex: 54.74 degrees about X after 45 about Z
-const _tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(CORNER_TILT, 0, Math.PI / 4, 'ZYX'));
 const _spin = new THREE.Quaternion();
 const _centre = new THREE.Matrix4();
 
@@ -247,11 +245,15 @@ export class Boxes {
    * @param onPickup (body, index, box) => boolean   true when the kart took the box (it held nothing and
    *                 was allowed the box); box is the entry of `boxes` with x, z, base, row, down, scale
    *
-   * The asset is a 1 m cube with its base at y = 0. If it arrives upright (height about 1 m) it is stood
-   * on a corner here; if the asset already stands on a corner (height about 1.73 m) it is used as it is.
+   * The pool draws the box with its base at y = 0 and `pool.size.y` tall (itembox.js: a 1.2 m block, or the
+   * item_box asset through an InstancePool). Round 3: the box stands UPRIGHT and spins about its vertical
+   * axis through its centre with a small lean that precesses, and it floats FLOAT_HEIGHT (0.12 m) over the
+   * road instead of 0.5 m, so under the 12 degree sun its shadow starts under its own footprint (the critic's
+   * round 3 "tilted and floating off the road"). The level hands the box base as road plus 0.5 m; the road
+   * height is read from the spline here and the level's offset is ignored whenever the spline has the road.
    */
   constructor({ scene, anchors = [], bodies = [], events = null, pool = null, spline = null, onPickup = null,
-                radius = 1.4, kartRadius = 0.7, respawn = 2.0, floatHeight = 0.5, spinRate = 1.6 }) {
+                radius = 1.4, kartRadius = 0.7, respawn = 2.0, floatHeight = 0.12, spinRate = 2.0, lean = 0.10, bob = 0.05 }) {
     this.scene = scene;
     this.bodies = bodies;
     this.events = events;
@@ -261,19 +263,20 @@ export class Boxes {
     this.kartRadius = kartRadius;   // added per body (body.radius when it has one): the body touching the box counts
     this.respawn = respawn;
     this.spinRate = spinRate;
+    this.floatHeight = floatHeight; // m, the box base over the road (the contact blob lies at base minus this)
+    this.lean = lean;               // rad, the precessing lean of the spinning block
+    this.bob = bob;                 // m, the bob amplitude
     this.time = 0;
     this.taken = 0;   // telemetry: boxes taken this race
     if (scene && this.pool.group.parent !== scene) scene.add(this.pool.group);
-    // an upright cube is 1.0 tall; one already standing on a corner is 1.73 tall
-    this.tilted = this.pool.size.y > 1.3;
+    this.half = (Number.isFinite(this.pool.size.y) && this.pool.size.y > 0 ? this.pool.size.y : 1.2) / 2;
     this.boxes = anchors.map((a, i) => {
       const given = typeof a.y === 'number' && Number.isFinite(a.y) ? a.y : NaN;
       let ry = NaN;
       if (spline && typeof spline.roadY === 'function') ry = spline.roadY(a.x, a.z);
       let base;
-      if (Number.isFinite(given) && Number.isFinite(ry)) base = given - ry >= 0.3 ? given : ry + floatHeight;
-      else if (Number.isFinite(given)) base = given;            // off the ribbon: trust the level's height
-      else if (Number.isFinite(ry)) base = ry + floatHeight;
+      if (Number.isFinite(ry)) base = ry + floatHeight;
+      else if (Number.isFinite(given)) base = given - 0.5 + floatHeight;   // off the ribbon: the level's road plus 0.5 convention
       else base = floatHeight;
       return { x: a.x, z: a.z, base, row: -1, slot: this.pool.acquire(), phase: i * 0.7, spin: i * 0.9, down: 0, scale: 1 };
     });
@@ -339,22 +342,19 @@ export class Boxes {
       }
       if (b.scale < 1) b.scale = Math.min(1, b.scale + dt / 0.3);
       b.spin += this.spinRate * dt;
-      const bob = Math.sin(this.time * 2.2 + b.phase) * 0.12;
+      const bob = Math.sin(this.time * 2.2 + b.phase) * this.bob;
+      // upright, spinning about the vertical axis through its centre, a small lean that precesses with the spin
+      const t = this.time * 1.1 + b.phase;
+      _spin.setFromEuler(_e.set(Math.sin(t) * this.lean, b.spin, Math.cos(t) * this.lean, 'YXZ'));
+      _p.set(b.x, b.base + bob + this.half, b.z);
       _s.setScalar(b.scale);
-      if (this.tilted) {
-        // the asset already stands on a corner with its base at 0: spin it about its vertical axis
-        _spin.setFromEuler(_e.set(0, b.spin, 0));
-        _p.set(b.x, b.base + bob, b.z);
-        _m.compose(_p, _spin, _s);
-      } else {
-        // the upright cube spins about its own centre (0.5 m up its wrapper) while standing on a corner
-        _spin.setFromEuler(_e.set(0, b.spin, 0)).multiply(_tilt);
-        _p.set(b.x, b.base + bob + 0.87, b.z);   // corner to corner is 1.73 m; centre sits at half that
-        _m.compose(_p, _spin, _s);
-        _centre.makeTranslation(0, -0.5, 0);
-        _m.multiply(_centre);
-      }
+      _m.compose(_p, _spin, _s);
+      _centre.makeTranslation(0, -this.half, 0);   // the pool's block has its base at 0: centre it before the spin
+      _m.multiply(_centre);
       this.pool.set(b.slot, _m);
+      if (typeof this.pool.setAlpha === 'function') this.pool.setAlpha(b.slot, b.scale);
+      // the contact blob lies on the road under the box (base is road plus floatHeight), 2 cm up to clear the ribbon
+      if (typeof this.pool.setContact === 'function') this.pool.setContact(b.slot, b.x, b.base - this.floatHeight + 0.02, b.z, b.scale);
       // a box is takeable the moment it is back: the 0.3 s pop in is cosmetic (round 1: the pop in
       // added to the 2 s respawn was exactly the window a kart 50 m behind the taker arrived in)
       for (let i = 0; i < this.bodies.length; i++) {

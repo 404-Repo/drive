@@ -31,38 +31,39 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r2-20260906125925';
-import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r2-20260906125925';
-import { createSky } from './src/render/sky.js?v=r2-20260906125925';
-import { createLightingRig } from './src/render/lighting.js?v=r2-20260906125925';
-import { createPost } from './src/render/post.js?v=r2-20260906125925';
-import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r2-20260906125925';
-import { buildRoad } from './src/track/road.js?v=r2-20260906125925';
-import { buildTerrain } from './src/track/terrain.js?v=r2-20260906125925';
-import { buildSea } from './src/track/sea.js?v=r2-20260906125925';
-import { World } from './src/track/collision.js?v=r2-20260906125925';
-import { buildLevel } from './src/level/build.js?v=r2-20260906125925';
-import { GRID, PLACEMENTS } from './src/level/placements.js?v=r2-20260906125925';
-import { KartBody, resolveBumps } from './src/kart/physics.js?v=r2-20260906125925';
-import { Player } from './src/kart/player.js?v=r2-20260906125925';
-import { KartView } from './src/kart/kartview.js?v=r2-20260906125925';
-import { ChaseCamera } from './src/kart/camera.js?v=r2-20260906125925';
-import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r2-20260906125925';
-import { Director } from './src/ai/director.js?v=r2-20260906125925';
-import { ItemSystem } from './src/items/items.js?v=r2-20260906125925';
-import { Screens } from './src/ui/screens.js?v=r2-20260906125925';
-import { HUD } from './src/ui/hud.js?v=r2-20260906125925';
-import { Minimap } from './src/ui/minimap.js?v=r2-20260906125925';
-import { Input } from './src/ui/input.js?v=r2-20260906125925';
-import { TouchControls } from './src/ui/touch.js?v=r2-20260906125925';
-import { Audio } from './src/audio/audio.js?v=r2-20260906125925';
-import { Events } from './src/game/events.js?v=r2-20260906125925';
-import { Race } from './src/game/race.js?v=r2-20260906125925';
-import { createTelemetry } from './src/game/telemetry.js?v=r2-20260906125925';
+import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r3-20260906150928';
+import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r3-20260906150928';
+import { createSky } from './src/render/sky.js?v=r3-20260906150928';
+import { createLightingRig } from './src/render/lighting.js?v=r3-20260906150928';
+import { createPost } from './src/render/post.js?v=r3-20260906150928';
+import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r3-20260906150928';
+import { buildRoad } from './src/track/road.js?v=r3-20260906150928';
+import { buildTerrain } from './src/track/terrain.js?v=r3-20260906150928';
+import { buildSea } from './src/track/sea.js?v=r3-20260906150928';
+import { World } from './src/track/collision.js?v=r3-20260906150928';
+import { buildLevel } from './src/level/build.js?v=r3-20260906150928';
+import { GRID, PLACEMENTS } from './src/level/placements.js?v=r3-20260906150928';
+import { KartBody, resolveBumps } from './src/kart/physics.js?v=r3-20260906150928';
+import { Player } from './src/kart/player.js?v=r3-20260906150928';
+import { KartView } from './src/kart/kartview.js?v=r3-20260906150928';
+import { ChaseCamera } from './src/kart/camera.js?v=r3-20260906150928';
+import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r3-20260906150928';
+import { Director } from './src/ai/director.js?v=r3-20260906150928';
+import { DriftSmoke } from './src/ai/driftfx.js?v=r3-20260906150928';
+import { ItemSystem } from './src/items/items.js?v=r3-20260906150928';
+import { Screens } from './src/ui/screens.js?v=r3-20260906150928';
+import { HUD } from './src/ui/hud.js?v=r3-20260906150928';
+import { Minimap } from './src/ui/minimap.js?v=r3-20260906150928';
+import { Input } from './src/ui/input.js?v=r3-20260906150928';
+import { TouchControls } from './src/ui/touch.js?v=r3-20260906150928';
+import { Audio } from './src/audio/audio.js?v=r3-20260906150928';
+import { Events } from './src/game/events.js?v=r3-20260906150928';
+import { Race } from './src/game/race.js?v=r3-20260906150928';
+import { createTelemetry } from './src/game/telemetry.js?v=r3-20260906150928';
 
 const Q = new URLSearchParams(location.search);
 const STAMP = window.__BUILD_STAMP__ || null;
-const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r2';
+const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r3';
 const STRICT = Q.get('strict') === '1';
 const LAPS = Math.max(1, Math.min(9, parseInt(Q.get('laps') || '3', 10) || 3));
 const DROP = Q.get('drop') === '1';
@@ -219,6 +220,9 @@ async function boot() {
   const views = new Map();
   for (const r of roster) views.set(r.id, new KartView({ scene, livery: r.livery, id: r.id, hero: r.id === PLAYER.id }));
   await Promise.all([...views.values()].map((v) => v.load()));
+  // round 3 (ai -> game): pooled tyre smoke for every kart that slides, the player included (kartview ships no smoke of its own)
+  const smoke = new DriftSmoke({ scene, tier });
+  for (const b of bodies) smoke.attach(b.id, views.get(b.id), b);
   for (const v of views.values()) for (const m of v.missing || []) missingAssets.add(m);
   mark('karts');
 
@@ -325,7 +329,9 @@ async function boot() {
   events.on('hit', ({ target, shielded }) => { if (target === PLAYER.id && !shielded) hud.hit(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && started && race.state === 'racing') setPaused(true); });
 
-  window.__START__ = () => startRace();
+  // round 3 (integrator): the photograph tool starts through this entry; it now goes through the screen's own start path so the
+  // start screen is dismissed like a real press (startRace alone left the DRIVE overlay over every tools/shot.mjs still)
+  window.__START__ = () => { if (typeof screens._start === 'function' && screens.start.classList.contains('on')) screens._start(); if (!started) startRace(); };
   window.__PAUSE__ = (on) => setPaused(on === undefined ? !paused : on);
   window.__DBG__ = {
     teleport(p) {
@@ -338,7 +344,7 @@ async function boot() {
     },
     drop() { dropNow(); },
     finish() { return race.debugFinishPlayer(); },
-    race, items, level, bodies, views, rig, sky, sea, world, spline, tier, events, audio, post, chase, scene, camera, renderer, terrain, road,
+    race, items, level, bodies, views, rig, sky, sea, world, spline, tier, events, audio, post, chase, scene, camera, renderer, terrain, road, smoke,
     player, input, touch, director, ais, hud, screens,
   };
   function dropNow() {
@@ -475,6 +481,7 @@ async function boot() {
       for (const b of bodies) { const v = views.get(b.id); if (v) v.update(dt, b); }
       for (const m of level.movers) m.update(dt);
       chase.update(dt, playerBody);
+      smoke.update(dt, camera);
       touch.consume();
     }
     // one shot flags (item, pause, start) are cleared AFTER the player read them (kart notes: consume
@@ -486,7 +493,8 @@ async function boot() {
     sky.update(camera, dt);
     post.setFade(playerBody.fadeAlpha || 0);
     const boostVis = playerBody.boost > 0 ? Math.min(1, playerBody.boost / 0.5) : 0;
-    const lines = Math.max(boostVis * 0.6, typeof items.speedLines === 'function' ? items.speedLines(PLAYER.id) || 0 : 0);
+    const fast = Math.max(0, Math.min(1, (Math.abs(playerBody.speed) - 20) / 6));   // round 3 (kart -> game): radial speed lines above 20 m/s (0 at 20, 1 at 26), not only on boost
+    const lines = Math.max(boostVis, fast * 0.55, typeof items.speedLines === 'function' ? items.speedLines(PLAYER.id) || 0 : 0);
     post.setSpeedLines(lines);
     post.render(dt);
 

@@ -22,10 +22,10 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r2-20260906125925';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r2-20260906125925';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r2-20260906125925';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r2-20260906125925';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r3-20260906150928';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r3-20260906150928';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r3-20260906150928';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r3-20260906150928';
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
@@ -68,6 +68,144 @@ function bakeKeyOf(block) {
   const [bx, bz] = String(block).split('_').map(Number);
   if (!Number.isFinite(bx) || !Number.isFinite(bz)) return String(block);
   return `${Math.floor(bx / BAKE_SPAN)}_${Math.floor(bz / BAKE_SPAN)}`;
+}
+
+// Far variants per bake block (round 3, critic item 100). The hairpin exit (progress 0.44 to 0.47, the whole town in
+// view) drew 1.67M then 1.55M triangles against the 1.5M budget in rounds 1 and 2 after every asset trim there was.
+// Every block is now baked once per tier: the near copy is the asset as shipped; a far copy is the same placement with
+// every part whose largest dimension is under the tier's `part` dropped (rivets, brackets, bunting clips, balusters,
+// crate lemons, lamp fittings: parts under 25 cm are 12 percent of the placed static triangles,
+// work/fix3_level/partstats2.mjs) and no contact fillet (a 6 cm ground blend is a near detail by definition). A
+// BlockLOD shows the copy whose tier the block box distance falls in, with hysteresis so a block on a line does not
+// flicker. The tiers keep one angular size: 25 cm at 90 m, 50 cm at 200 m and 75 cm at 300 m are all under 3 px in
+// the desktop frame, so a swap is not visible in a filmstrip. Measured at the hairpin exit worst case
+// (work/game/pack.mjs, progress 0.445, the AI pack ahead): 1.511M without far copies, 1.388M with 90/25 cm and
+// 200/40 cm, 1.355M with 200/50 cm, 1.333M with the 300/75 cm tier (work/fix3_level/tierprobe.log). Foliage and card materials never drop a part: a palm crown is a
+// feature made of parts under 50 cm and would vanish as a whole (a per material share guard was tried first and cut
+// the yield from 177k to 36k, so a 2 px hole in a far wall face is the accepted trade). No decimation, no segment
+// change, nothing scaled: a part is either there or not. Parts are what the asset author made
+// (the keepHierarchy load keeps them; the shipped merge welds them per material, which is why the far copies are
+// built from a second, unmerged load and filtered once per asset and tier). Buckets a tier did not change share the
+// near bucket's geometry, so the copies cost GPU memory only where they differ. Karts are not blocks and keep their
+// silhouettes. Knobs: ?far=0 builds no far copies (the A/B), ?far=N shows tier N at every distance (to eyeball a drop).
+const FAR_TIERS = [{ dist: 90, part: 0.25 }, { dist: 200, part: 0.50 }, { dist: 300, part: 0.75 }];   // one angular size, about 2.6 mrad (under 3 px on the desktop frame)
+// probe knob (work/fix3_level): ?fartiers=90:0.25,200:0.5 overrides the tiers for one load
+{ const m = typeof location !== 'undefined' && /(^|[?&])fartiers=([0-9.:,]+)/.exec(location.search); if (m) FAR_TIERS.splice(0, FAR_TIERS.length, ...m[2].split(',').map((t) => { const [d, q] = t.split(':').map(Number); return { dist: d, part: q }; })); }
+const FAR_HYST = 0.06;
+const _farCam = new THREE.Vector3();
+class BlockLOD extends THREE.LOD {
+  /** built with the near level only; the far copies arrive through addFar once the deferred build bakes them */
+  constructor(near, box) {
+    super();
+    this.isBlockLOD = true;
+    this.addLevel(near, 0);
+    this.userData.box = box;
+    this.tier = 0;
+  }
+  /** the next tier's copy (tier 1, then 2, ...); a tier with no copy for this block keeps the previous level */
+  addFar(obj) {
+    obj.visible = false;
+    this.addLevel(obj, FAR_TIERS[this.levels.length - 1].dist);
+  }
+  /** the renderer calls this per frame (autoUpdate): the block box distance decides, not the LOD's own position */
+  update(camera) {
+    camera.getWorldPosition(_farCam);
+    const box = this.userData.box;
+    const d = box ? box.distanceToPoint(_farCam) : 0;
+    const n = this.levels.length;
+    let t = this.tier;
+    if (BlockLOD.force >= 0) t = Math.min(BlockLOD.force, n - 1);
+    else {
+      // move one tier at a time, each line with its own hysteresis band
+      while (t + 1 < n && d > this.levels[t + 1].distance * (1 + FAR_HYST)) t++;
+      while (t > 0 && d < this.levels[t].distance * (1 - FAR_HYST)) t--;
+    }
+    if (t !== this.tier) {
+      this.tier = t;
+      for (let i = 0; i < n; i++) this.levels[i].object.visible = i === t;
+    }
+  }
+}
+BlockLOD.force = -1;   // -1 by distance, N: tier N everywhere (the ?far= knob)
+/** largest world dimension of a mesh (every instance of an InstancedMesh), for the far part rule */
+const _pb = new THREE.Box3(), _ps = new THREE.Vector3(), _pm = new THREE.Matrix4(), _pim = new THREE.Matrix4();
+function partExtent(o) {
+  const geo = o.geometry;
+  if (!geo || !geo.attributes.position) return 0;
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  let mx = 0;
+  if (o.isInstancedMesh) {
+    for (let i = 0; i < o.count; i++) {
+      o.getMatrixAt(i, _pim);
+      _pb.copy(geo.boundingBox).applyMatrix4(_pm.multiplyMatrices(o.matrixWorld, _pim));
+      _pb.getSize(_ps); mx = Math.max(mx, _ps.x, _ps.y, _ps.z);
+    }
+    return mx;
+  }
+  _pb.copy(geo.boundingBox).applyMatrix4(o.matrixWorld);
+  _pb.getSize(_ps);
+  return Math.max(_ps.x, _ps.y, _ps.z);
+}
+const trisOfMesh = (o) => (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
+/**
+ * The far prototypes of an asset, one per tier: the unmerged tree with every part under the tier's `part` removed
+ * (guards above), each as { obj, dropped, total } in triangles. obj is the tree after the material pass and a per
+ * material merge, done ONCE here: an unmerged tree is a few hundred parts and cloning it per placement cost 3.6 s of
+ * level build (measured, work/fix3_level/NOTES.md); the merged prototype is about ten meshes, like the shipped ASSET()
+ * merge, and its clones share the vertexised geometry and the set materials. A tier that drops nothing gets the
+ * plain merged prototype after the same material pass. Of the per placement paints only the kerb's reaches this path
+ * (the same colours on every kerb, so it runs on the prototype); the painted boats are movers and have no far copy.
+ */
+async function farPrototypes(url, asset, materials) {
+  const tree = await ASSET(url, { surfaces: false, keepHierarchy: true });
+  tree.updateMatrixWorld(true);
+  const parts = [];
+  let total = 0;
+  tree.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const name = (o.material && !Array.isArray(o.material) && o.material.name) || '';
+    const tris = trisOfMesh(o);
+    total += tris;
+    parts.push({ o, tris, extent: partExtent(o), keep: name === 'foliage' || String(name).startsWith('card') });   // crowns and cards are features of parts
+  });
+  if (asset === 'kerb_module') paintKerb(THREE, tree);   // the kerb paint is per instance on the near path but the same for every kerb
+  materials(tree, { asset, local: false, unify: false });
+  const out = [];
+  let base = null;   // the merged prototype of the last tier that dropped nothing, shared by every such tier
+  for (const tier of FAR_TIERS) {
+    let dropped = 0;
+    const drop = parts.filter((q) => !q.keep && q.extent < tier.part);
+    for (const q of drop) dropped += q.tris;
+    if (!drop.length) {
+      // nothing to drop at this tier: the prototype takes the near path exactly (shipped merge, then the material pass)
+      // so its block buckets match the near buckets vertex for vertex and share their geometry
+      if (!base) { base = await ASSET(url, { surfaces: false }); if (asset === 'kerb_module') paintKerb(THREE, base); materials(base, { asset, local: false, unify: false }); }
+      out.push({ obj: base, dropped, total, plain: true }); continue;
+    }
+    const dropSet = new Set(drop.map((q) => q.o));
+    const copy = tree.clone(true);   // the tiers are nested (a bigger part threshold drops a superset), each from the whole tree
+    const rm = [];
+    const srcList = [], dstList = [];
+    tree.traverse((n) => srcList.push(n)); copy.traverse((n) => dstList.push(n));
+    srcList.forEach((n, k) => { if (dropSet.has(n)) rm.push(dstList[k]); });
+    for (const o of rm) o.removeFromParent();
+    out.push({ obj: bakeStatic(copy), dropped, total, plain: false });
+  }
+  return out;
+}
+/** a far bucket that a tier did not change takes the near bucket's geometry (same material, same size) */
+function shareUnchanged(near, far) {
+  const byMat = new Map();
+  near.traverse((o) => { if (o.isMesh && o.geometry) { const k = o.material; if (!byMat.has(k)) byMat.set(k, []); byMat.get(k).push(o); } });
+  let shared = 0;
+  far.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    const cands = byMat.get(o.material) || [];
+    const n = o.geometry.attributes.position.count, ni = o.geometry.index ? o.geometry.index.count : -1;
+    const hit = cands.find((c) => c.geometry.attributes.position.count === n && (c.geometry.index ? c.geometry.index.count : -1) === ni);
+    if (hit && hit.geometry !== o.geometry) { o.geometry.dispose(); o.geometry = hit.geometry; shared++; }
+  });
+  return shared;
 }
 
 function stamp(url) {
@@ -189,12 +327,46 @@ export async function buildLevel(THREE_, opts) {
       cyl(p.x, p.z, Math.max(w, d) / 2 * 0.95, h, p.tag);
       return;
     }
+    if (p.asset === 'quay_edge_module' && world.addBox) {
+      // round 3 (integrator): the modules moved from the deck to the water line (level, item 5), which put the top of this 1.6 m
+      // collider AT deck level and the harbour straight lost its barrier: both final gate runs fell into the harbour 5 s after GO.
+      // The box stands on the deck (0.2 m under to 1.4 m over it) whatever the module's y; the coping is drawn where the level put it
+      world.addBox(new T.Vector3(p.x, y + h + 0.4, p.z), new T.Vector3(w, h, d), yaw, p.tag); colliders++;
+      return;
+    }
     if (CYLINDER_ASSETS.has(p.asset) && world.addCylinder) {
       const r = p.asset === 'clock_tower' || p.asset === 'lighthouse' || p.asset === 'fountain' ? Math.min(w, d) / 2 : Math.min(w, d) / 2 * 0.5;
       world.addCylinder(new T.Vector3(p.x, y + h / 2, p.z), Math.max(0.12, r), h, p.tag); colliders++;   // geometric centre, as addBox
     } else if (world.addBox) {
       world.addBox(new T.Vector3(p.x, y + h / 2, p.z), new T.Vector3(w, h, d), yaw, p.tag); colliders++;
     }
+  };
+
+  // far copies: desktop tier only (the phone tier passes the triangle budget at 950k and its memory is the scarcer
+  // resource); ?far=0 switches them off for the A/B, ?far=N forces tier N at every distance
+  const qs = typeof location !== 'undefined' ? location.search : '';
+  const farKnob = /(^|[?&])far=(-?\d)/.exec(qs);
+  const tierName = typeof tier === 'object' && tier ? tier.name : tier;
+  const farOn = opts.farVariant !== undefined ? !!opts.farVariant : (farKnob ? farKnob[2] !== '0' : tierName !== 'phone');
+  BlockLOD.force = farKnob ? +farKnob[2] : -1;   // far=0 builds none, far=N forces tier N
+  const placed = [];   // { p, y, url, bakeKey } of every static placement, for the deferred far build
+  const place = (obj, p, y, materials = true) => {
+    obj.position.set(p.x, y, p.z);
+    obj.rotation.set(0, p.rot * DEG2RAD, 0);
+    if (p.tilt) {
+      // a lean, never a scale: rotate about a horizontal axis chosen from the placement's own rotation
+      const lean = p.tilt * DEG2RAD, dir = (p.rot * 0.7 + p.x * 0.31 + p.z * 0.17) % (Math.PI * 2);
+      obj.rotateOnWorldAxis(new T.Vector3(Math.cos(dir), 0, Math.sin(dir)), lean);
+    }
+    obj.name = p.tag;
+    obj.userData.asset = p.asset;
+    // unify stays OFF for movers too (integrator, round 0): with unify the spectator groups' crowd cards took
+    // the asset's dominant set and rendered as opaque black squares at the lower street and the piazza
+    // (rounds/r0 finish run frames 1 and 2)
+    if (!materials) return;   // a far copy cloned from a prototype that already went through the material pass
+    if (p.asset === 'kerb_module') paintKerb(T, obj);
+    if (p.paint) paintHull(T, obj, p.paint);
+    applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: false });
   };
 
   const n = list.length;
@@ -215,21 +387,7 @@ export async function buildLevel(THREE_, opts) {
     let y;
     if (typeof p.y === 'number') y = p.y;
     else y = heightAt(px, pz) + (p.lift || 0) + (p.dy || 0) - SINK;
-    obj.position.set(p.x, y, p.z);
-    obj.rotation.set(0, p.rot * DEG2RAD, 0);
-    if (p.tilt) {
-      // a lean, never a scale: rotate about a horizontal axis chosen from the placement's own rotation
-      const lean = p.tilt * DEG2RAD, dir = (p.rot * 0.7 + p.x * 0.31 + p.z * 0.17) % (Math.PI * 2);
-      obj.rotateOnWorldAxis(new T.Vector3(Math.cos(dir), 0, Math.sin(dir)), lean);
-    }
-    obj.name = p.tag;
-    obj.userData.asset = p.asset;
-    // unify stays OFF for movers too (integrator, round 0): with unify the spectator groups' crowd cards took
-    // the asset's dominant set and rendered as opaque black squares at the lower street and the piazza
-    // (rounds/r0 finish run frames 1 and 2)
-    if (p.asset === 'kerb_module') paintKerb(T, obj);
-    if (p.paint) paintHull(T, obj, p.paint);
-    applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: false });
+    place(obj, p, y);
     counts.set(p.asset, (counts.get(p.asset) || 0) + 1);
     assetNames.add(p.asset);
     addCollider(p, size, y);
@@ -263,11 +421,13 @@ export async function buildLevel(THREE_, opts) {
     g.add(obj);
     blockNames.get(bakeKey).add(p.asset);
     // fillet under props that stand on the terrain (never under things at an absolute y: boats, bunting, cliff rocks; a road station y counts as ground)
+    let fillet = null;
     const spec = FILLET_ASSETS[p.asset];
     if (spec && (p.y === null || p.onGround)) {
-      const fillet = makeFillet(p, [size[0], size[1]], spec, heightAt, paintAt(p.x, p.z));
+      fillet = makeFillet(p, [size[0], size[1]], spec, heightAt, paintAt(p.x, p.z));
       if (fillet) { applyMaterials(fillet, { asset: 'fillet' }); g.add(fillet); }
     }
+    if (farOn) placed.push({ p, y, url, bakeKey });   // the far copies of this placement are built after level ready (step 9)
   }
 
   // 4. house front walls as continuous collision segments
@@ -299,18 +459,11 @@ export async function buildLevel(THREE_, opts) {
   progress(0.82, 'baking blocks');
   const blocks = new Map();
   let k = 0;
-  for (const [key, g] of blockGroups) {
+  const bakeGroup = (g, key) => {
     g.updateMatrixWorld(true);
     let empty = true; g.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position && o.geometry.attributes.position.count > 0) empty = false; });
-    if (empty) continue;   // a cell whose every mesh moved to the coarse block
+    if (empty) return null;   // a cell whose every mesh moved to the coarse block
     const baked = bakeStatic(g);
-    // (no '#nocast' suffix: the rig's dithered fade variant of a CARD material dropped its alpha test and
-    // the standalone bougainvillea cards drew as 3 x 4 m black squares; main.js hides the fine group by
-    // distance instead, and a pop at 140 m on props under 2 m is not visible)
-    baked.name = 'block_' + key + (key.endsWith('~fine') ? '_fine' : '');
-    baked.userData.fine = key.endsWith('~fine');
-    baked.userData.block = key;
-    baked.userData.assets = [...blockNames.get(key)];
     // a coarse (light bucket) block casts only from its cards (bunting, crowds, fronds) and canvas awnings:
     // fillets, pads, glass, lamp heads and caps have no shadow anyone can see (23 calls and 67k triangles
     // of shadow pass at the piazza exit); the 30 m cells cast from every bucket
@@ -322,11 +475,26 @@ export async function buildLevel(THREE_, opts) {
       o.castShadow = !coarse || (m && m.alphaTest > 0) || u.triSet === 'canvas_stripe';
       o.receiveShadow = true;
     });
+    return baked;
+  };
+  for (const [key, g] of blockGroups) {
+    const baked = bakeGroup(g, key);
+    if (!baked) continue;
+    // (no '#nocast' suffix: the rig's dithered fade variant of a CARD material dropped its alpha test and
+    // the standalone bougainvillea cards drew as 3 x 4 m black squares; main.js hides the fine group by
+    // distance instead, and a pop at 140 m on props under 2 m is not visible)
+    baked.name = 'block_' + key + (key.endsWith('~fine') ? '_fine' : '');
     tmpBox.setFromObject(baked);
     blockBoxes.get(key).copy(tmpBox);
-    baked.userData.box = tmpBox.clone();
-    scene.add(baked);
-    blocks.set(key, baked);
+    // behind a BlockLOD when far copies are on: the far twins of this block arrive from the deferred build
+    let node = baked;
+    if (farOn) { node = new BlockLOD(baked, tmpBox.clone()); node.name = 'lod_' + key; }
+    node.userData.fine = key.endsWith('~fine');
+    node.userData.block = key;
+    node.userData.assets = [...blockNames.get(key)];
+    node.userData.box = tmpBox.clone();
+    scene.add(node);
+    blocks.set(key, node);
     if ((++k) % 8 === 0) progress(0.82 + 0.15 * (k / blockGroups.size), 'baking blocks');
   }
 
@@ -375,7 +543,102 @@ export async function buildLevel(THREE_, opts) {
   }
 
   progress(1, 'level ready');
-  return { blocks, movers, colliders, assetNames, counts, itemBoxAnchors, padAnchors, visibleAssets, missing, placements: list };
+
+  // 9. the far copies, built AFTER the level is ready in time slices between frames (round 3): built inline they
+  // cost 1.2 s of the 8 s ready budget (7.8 s measured on 4G in the round 3 gate); a block needs its far copy only
+  // once the camera is 90 m from it, which is several seconds after the countdown, and until then the BlockLOD keeps
+  // drawing the near copy. Order: prototypes per asset (a second, unmerged load filtered per tier, the material pass
+  // and a merge, once per asset), the copies per placement into per tier groups under the near block's key, the
+  // light bucket hoist per tier, then one bake per block and tier attached to the block's BlockLOD. `far.done`
+  // turns true at the end (probes wait on it); a failure is logged and leaves every block on its near copy.
+  const far = { on: farOn, done: !farOn, error: null, tiers: FAR_TIERS.map((t) => ({ ...t })), dropped: FAR_TIERS.map(() => 0), total: 0, blocks: 0, shared: 0 };
+  if (farOn) far.promise = buildFarDeferred();
+  async function buildFarDeferred() {
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const SLICE = 6;   // ms of far work per frame
+    let t0 = now();
+    const yieldFrame = () => new Promise((r) => { if (typeof requestAnimationFrame === 'function' && !(typeof document !== 'undefined' && document.hidden)) requestAnimationFrame(() => r()); else setTimeout(r, 0); });
+    const slice = async () => { if (now() - t0 > SLICE) { await yieldFrame(); t0 = now(); } };
+    // start only once the game reports ready (main.js sets window.__READY__ after the karts, items and audio): the
+    // first slices otherwise interleave with the rest of the boot (round 3 gate run 3: karts and ready phases +370 ms)
+    for (let waited = 0; typeof window !== 'undefined' && !window.__READY__ && waited < 600; waited++) await yieldFrame();
+    const tStart = now();
+    let work = 0;
+    try {
+      // a. prototypes per asset
+      const protos = new Map();
+      for (const name of [...new Set(placed.map((e) => e.p.asset))]) {
+        const w0 = now();
+        protos.set(name, await farPrototypes(stamp(assetUrl(name)), name, applyMaterials));
+        work += now() - w0;
+        await slice();
+      }
+      // b. the copies per placement, per tier
+      const farGroups = FAR_TIERS.map(() => new Map());
+      const farGroupFor = (ti, key) => {
+        let g = farGroups[ti].get(key);
+        if (!g) { g = new T.Group(); g.name = `far${ti + 1}_` + key; farGroups[ti].set(key, g); }
+        return g;
+      };
+      let i = 0;
+      for (const e of placed) {
+        const w0 = now();
+        const fps = protos.get(e.p.asset);
+        for (let ti = 0; ti < FAR_TIERS.length; ti++) {
+          const fp = fps[ti];
+          const objF = fp.obj.clone(true);
+          far.dropped[ti] += fp.dropped; if (ti === 0) far.total += fp.total;
+          place(objF, e.p, e.y, false);
+          farGroupFor(ti, e.bakeKey).add(objF);
+          // no fillet in a far copy: a contact blend 6 cm high is a near detail by definition (the ground sets were
+          // 75k triangles in the hairpin exit view, most of them past 90 m); the far prop still sits 4 cm into the ground
+        }
+        work += now() - w0;
+        if ((++i) % 16 === 0) await slice();
+      }
+      // c. the light bucket hoist, the same split as the near blocks so every far twin sits under the near key
+      if (BAKE_SPAN_COARSE > BAKE_SPAN) {
+        for (let ti = 0; ti < FAR_TIERS.length; ti++) {
+          for (const [key, g] of [...farGroups[ti]]) {
+            if (key.startsWith('c')) continue;
+            const w0 = now();
+            g.updateMatrixWorld(true);
+            const move = [];
+            g.traverse((o) => { if (o.isMesh && lightBucket(o.material)) move.push(o); });
+            if (move.length) { const cg = farGroupFor(ti, coarseKeyOf(key)); for (const m of move) cg.attach(m); }
+            work += now() - w0;
+            await slice();
+          }
+        }
+      }
+      // d. one bake per block and tier, attached to the block's BlockLOD (never a caster: past 90 m is past castDist)
+      for (const [key, node] of blocks) {
+        if (!node.isBlockLOD) continue;
+        const near = node.levels[0].object;
+        for (let ti = 0; ti < FAR_TIERS.length; ti++) {
+          const fg = farGroups[ti].get(key);
+          const w0 = now();
+          const baked = fg ? bakeGroup(fg, key) : null;
+          if (!baked) { work += now() - w0; break; }   // nothing of this block at this tier: the previous level stays
+          baked.name = near.name + '_far' + (ti + 1);
+          baked.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+          far.shared += shareUnchanged(near, baked);
+          node.addFar(baked);
+          work += now() - w0;
+          await slice();
+        }
+        if (node.levels.length > 1) far.blocks++;
+      }
+      far.workMs = Math.round(work); far.elapsedMs = Math.round(now() - tStart);
+      console.log(`[level] far variants of ${Math.round(far.total / 1000)}k placed static triangles: ` + FAR_TIERS.map((t, ti) => `${Math.round(far.dropped[ti] / 1000)}k dropped past ${t.dist} m (parts under ${t.part} m)`).join(', ') + `; no fillets past ${FAR_TIERS[0].dist} m; ${far.blocks} of ${blocks.size} blocks carry far copies, ${far.shared} unchanged far buckets share the near geometry; ${far.workMs} ms of work over ${far.elapsedMs} ms after level ready`);
+    } catch (e) {
+      far.error = e;
+      console.error('[level] far variants FAILED, every block stays on its near copy:', e && e.message ? e.message : e);
+    }
+    far.done = true;
+  }
+
+  return { blocks, movers, colliders, assetNames, counts, itemBoxAnchors, padAnchors, visibleAssets, missing, placements: list, far };
 }
 
 /**

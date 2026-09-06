@@ -56,10 +56,10 @@
  *   applyTerrainMaterial(terrain.tiles, terrain)   after buildTerrain
  */
 import * as THREE from 'three';
-import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r2-20260906125925';
-import { classify, RECIPES } from '../../surfaces.js?v=r2-20260906125925';
-import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r2-20260906125925';
-import { getTier } from './quality.js?v=r2-20260906125925';
+import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r3-20260906150928';
+import { classify, RECIPES } from '../../surfaces.js?v=r3-20260906150928';
+import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r3-20260906150928';
+import { getTier } from './quality.js?v=r3-20260906150928';
 
 /**
  * The sets. `scale` is metres per tile. `normal` is the normal map strength, `albedo` and `rough`
@@ -68,7 +68,7 @@ import { getTier } from './quality.js?v=r2-20260906125925';
  */
 export const SETS = {
   asphalt_worn:     { scale: 3.0, recipe: 'ground', road: true,  normal: 0.6, albedo: 1.0, rough: 0.8, wear: 0.0 },
-  cobble_warm:      { scale: 2.0, recipe: 'stone',  road: true,  normal: 0.9, albedo: 1.0, rough: 0.8, wear: 0.2 },
+  cobble_warm:      { scale: 2.0, recipe: 'stone',  road: true,  normal: 0.30, albedo: 1.0, rough: 0.8, wear: 0.2 },
   sand_beach:       { scale: 1.5, recipe: 'ground',              normal: 0.5, albedo: 1.0, rough: 0.7, wear: 0.0 },
   grass_dry:        { scale: 2.0, recipe: 'ground',              normal: 0.6, albedo: 0.9, rough: 0.7, wear: 0.0 },
   rock_cliff:       { scale: 1.0, recipe: 'stone',  rock: true,  normal: 1.0, albedo: 1.0, rough: 0.8, wear: 0.3 },
@@ -93,8 +93,8 @@ export const CARDS = {
   palm_frond_c:    { sss: 0.12, tint: 0.30 },
   pine_bough_a:    { sss: 0.08, tint: 0.35 },
   pine_bough_b:    { sss: 0.08, tint: 0.35 },
-  bougainvillea_a: { sss: 0.12, tint: 0.40 },   // round 2 (level request): pulled further toward the palette magenta so the cascades hold saturation over 0.6 under the sun 12 rig
-  bougainvillea_b: { sss: 0.12, tint: 0.40 },
+  bougainvillea_a: { sss: 0.12, tint: 0.55 },   // round 2 (level request) 0.40, round 3 0.55: pulled further toward the palette magenta so the cascades hold saturation over 0.6 under the low sun rig
+  bougainvillea_b: { sss: 0.12, tint: 0.55 },
   bunting_a:       { sss: 0.06, tint: 0.00 },
   flag_a:          { sss: 0.06, tint: 0.00 },
   crowd_a:         { sss: 0.00, tint: 0.00 },
@@ -134,6 +134,32 @@ const ROCK_ASSETS = /rock_|boulder|sea_stack|cliff|tunnel/;
  * red carry a hot spot. `?kerbr=` (the road knob) does not reach these; `?assetr=0` disables the caps.
  */
 const ROUGH_CAP = { kerb_module: 0.45, lap_arch: 0.5, start_gantry: 0.5 };
+/**
+ * SATURATION on objects only (fix3_render, critic item 3: "the whole frame is a bleached pastel, satMed 0.204
+ * against the bar's 0.310; raise saturation on objects only (karts, kerbs, bunting, awnings, sea, bougainvillea)
+ * through their albedo tints, leave road and plaster neutral"). Applied to the part's material colour in phase 1,
+ * before bake.js writes it into the vertices, so no new draw bucket and nothing in post. Only a colour that is
+ * already saturated (HSV S over 0.30 in sRGB) is pushed, so whitewash, trims and the neutral sets never move;
+ * plaster, stone and the ground sets are not in the table at all. By set, then by asset (the larger wins).
+ * `?sat=0` disables for the A/B, `?sat=1.5` scales every factor's excess.
+ */
+const SAT_BOOST_SET = { canvas_stripe: 1.30, timber_painted: 1.20, metal_painted: 1.25, foliage_leaf: 1.12, terracotta_tile: 1.10 };
+const SAT_BOOST_ASSET = { kerb_module: 1.35, tyre_wall: 1.25, sign_chevron_board: 1.30, boost_pad: 1.25, race_flag_pole: 1.25, bunting_run: 1.25, item_box: 1.2, beach_umbrella: 1.3, deck_chair: 1.25, pedalo: 1.25, fishing_boat: 1.2, rowing_boat: 1.2, mooring_buoy: 1.3, market_stall: 1.25, cafe_terrace: 1.25, lifeguard_hut: 1.2 };
+function boostSaturation(color, k) {
+  if (!(k > 1)) return;
+  _c.copy(color).convertLinearToSRGB();
+  const r = _c.r, g = _c.g, b = _c.b;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  if (max <= 0) return;
+  const s = (max - min) / max;
+  if (s < 0.30) return;
+  const s2 = Math.min(0.96, s * k);
+  const min2 = max * (1 - s2);
+  // keep the hue: every channel keeps its place between min and max
+  const remap = (v) => (max - min > 1e-6 ? min2 + (v - min) / (max - min) * (max - min2) : v);
+  _c.setRGB(remap(r), remap(g), remap(b)).convertSRGBToLinear();
+  color.copy(_c);
+}
 
 // ------------------------------------------------------------------------------------------ textures
 const TEX = {};                  // set -> { map, normal, rough, mean: Color, roughMean, res }
@@ -511,7 +537,7 @@ const CARD_EMISSIVE_FS = /* glsl */`
   vec3 cgN = normalize( cross( dFdx( cgp ), dFdy( cgp ) ) );
   vec3 csun = normalize( ( viewMatrix * vec4( uCardSunW, 0.0 ) ).xyz );
   float cback = max( 0.0, - dot( cgN, csun ) );
-  totalEmissiveRadiance += diffuseColor.rgb * uCardSun * ( cardSss * cback );
+  totalEmissiveRadiance += min( diffuseColor.rgb * uCardSun * ( cardSss * cback ), vec3( 2.0 ) );   // round 3 (items -> render): capped under the 4.0 bloom threshold so a backlit crowd card cannot speckle the boards in front
 }`;
 
 let SUN_W = sunDirection(THREE).clone().normalize(), SUN_RGB = new THREE.Color(SUN_COLOR).multiplyScalar(SUN_INTENSITY / Math.PI);
@@ -691,6 +717,11 @@ export function applyMaterials(root, opts = {}) {
       mm.map = T.map; mm.normalMap = T.normal; mm.roughnessMap = T.rough || null;
       mm.normalScale = new THREE.Vector2(1, 1);
       if (ROUGH_CAP[asset] !== undefined && knob('assetr') !== '0' && typeof mm.roughness === 'number') mm.roughness = Math.min(mm.roughness, ROUGH_CAP[asset]);
+      if (knob('sat') !== '0') {
+        const sk = knob('sat') !== null ? +knob('sat') : 1;
+        const k = 1 + (Math.max(SAT_BOOST_SET[set] || 1, SAT_BOOST_ASSET[asset] || 1) - 1) * sk;
+        boostSaturation(mm.color, k);
+      }
       if (mm.flatShading) mm.flatShading = false;   // the flat normals go into the geometry instead (flattenGeometry)
       clones.set(ck, mm);
     }
@@ -806,7 +837,10 @@ uniform vec3 uAMean, uBMean;
 uniform vec2 uRoughMeans;
 uniform float uTriNFlip;
 uniform vec4 uGloss;         // x: paving roughness scale, y: kerb top and paint roughness, z: wet floor roughness, w: wet strength
-uniform vec4 uWetBox;        // harbour wet region: centre x, centre z, half width x, half depth z (metres)`;
+uniform vec4 uWetBox;        // harbour wet region: centre x, centre z, half width x, half depth z (metres)
+uniform vec3 uRoadKnee;      // x: knee (linear radiance), y: shoulder width, z: the stripes' knee
+uniform float uPaveTint;     // round 3: albedo scale on the paving (not the stripes), so the sunlit road sits under the knee instead of on its shoulder
+float roadStripeW = 0.0;     // 1 on the stripes: the rig's wrapPatch reads it (stripes keep the sun wrap, paving is Lambert)`;
 const ROAD_FS = /* glsl */`
 vec3 triN; float triR; float triMacro = 1.0;
 {
@@ -825,6 +859,12 @@ vec3 triN; float triR; float triMacro = 1.0;
   ratio = clamp( ratio, 0.2, 3.0 );
   float albK = mix( uAK.z, uBK.z, sm ), rghK = mix( uAK.w, uBK.w, sm );
   diffuseColor.rgb *= mix( vec3( 1.0 ), ratio, albK );
+  {
+    float pk = vSurfKind;
+    float pStripe = ( abs( pk - 2.0 ) < 0.5 || abs( pk - 5.0 ) < 0.5 || abs( pk - 7.0 ) < 0.5 || abs( pk - 12.0 ) < 0.5 || abs( pk - 13.0 ) < 0.5 ) ? 1.0 : 0.0;
+    diffuseColor.rgb *= mix( uPaveTint, 1.0, pStripe );
+    roadStripeW = pStripe;
+  }
   triN = normalize( nrm );
   triR = clamp( mix( 1.0, rgh, rghK ), 0.2, 1.6 );
   // macro variation at 1/9 frequency on the dominant set
@@ -851,7 +891,7 @@ const ROAD_ROUGH_FS = /* glsl */`
 float roughnessFactor;
 {
   float k = vSurfKind;
-  float stripe = ( abs( k - 2.0 ) < 0.5 || abs( k - 5.0 ) < 0.5 || abs( k - 7.0 ) < 0.5 || abs( k - 12.0 ) < 0.5 ) ? 1.0 : 0.0;
+  float stripe = ( abs( k - 2.0 ) < 0.5 || abs( k - 5.0 ) < 0.5 || abs( k - 7.0 ) < 0.5 || abs( k - 12.0 ) < 0.5 || abs( k - 13.0 ) < 0.5 ) ? 1.0 : 0.0;
   float r = mix( vRM.x * uGloss.x, min( vRM.x, uGloss.y ), stripe );
   vec2 wq = abs( vTriPos.xz - uWetBox.xy ) / max( uWetBox.zw, vec2( 0.01 ) );
   float wet = ( 1.0 - smoothstep( 0.75, 1.0, max( wq.x, wq.y ) ) ) * uGloss.w;
@@ -861,7 +901,31 @@ float roughnessFactor;
 }`;
 /** The harbour wet box: the quay road, TRACK-PLAN section A (x -134, z -6 to -106) and the quay beside it. */
 export const WET_BOX = { x: -134, z: -58, hw: 24, hd: 64 };
-export const ROAD_GLOSS = { paving: 0.80, stripe: 0.42, wetFloor: 0.38, wet: 0.6 };   // paving 0.88 x 0.80 = 0.70; 0.60 blew the mirror point of the 12 sun into a white blob behind the kart (work/fix2_render/cmp3.png)
+export const ROAD_GLOSS = { paving: 0.90, stripe: 0.42, wetFloor: 0.38, wet: 0.6 };   // paving 0.88 x 0.90 = 0.79 (round 2 0.80 x: 0.70 laid a white sheet toward the sun; 0.60 blew the mirror point into a blob, work/fix2_render/cmp3.png)
+/**
+ * ROAD HIGHLIGHT ROLLOFF (fix3_render, critic item 101: "the sun's mirror point on the cobbles ahead of the kart reads
+ * as a large soft white glare, p50 luma 186 to 204 toward the sun; keep p98 at 235 plus on lit white surfaces and
+ * paint, but the road never exceeds p50 luma 170 in any band"). The road's outgoing radiance is compressed above a
+ * knee by luminance (hue kept): below the knee untouched, above it a soft shoulder toward knee + width, so the
+ * flat cobble under the sun sits about 165 sRGB and the glare toward the sun tops out near 205 instead of 250,
+ * while the stripes (paint lines, start chequer, lane lines, kerb substrate top) keep a higher knee so the paint
+ * still reads white. The rig also gives the road the plain Lambert sun (no SUN_WRAP, lighting.js). Kerb modules
+ * are assets and are untouched. `?knee=0.30&kneew=0.26` are the A/B knobs; `?knee=9` is off.
+ */
+export const ROAD_KNEE = { knee: 0.13, width: 0.09, stripeKnee: 3.0, paveTint: 0.70 };   // knee 0.13: three's ACES scales by 1/0.6 before its curve, so sunlit flat paving is only about 0.18 linear here and a knee at 0.30 never bit (near band L 178 with the sun behind the camera); 0.13 / 0.09 lands it at 155 to 161 (work/fix3_render/s3_*.png). stripeKnee 3.0: the paint and kerb tops are never compressed (they are the lit whites of an east facing frame)
+const ROAD_KNEE_FS = /* glsl */`
+{
+  float kk = vSurfKind;
+  float kStripe = ( abs( kk - 2.0 ) < 0.5 || abs( kk - 5.0 ) < 0.5 || abs( kk - 7.0 ) < 0.5 || abs( kk - 12.0 ) < 0.5 || abs( kk - 13.0 ) < 0.5 ) ? 1.0 : 0.0;
+  float knee = mix( uRoadKnee.x, uRoadKnee.z, kStripe );
+  float lum = dot( outgoingLight, vec3( 0.2126, 0.7152, 0.0722 ) );
+  if ( lum > knee ) {
+    float e = lum - knee;
+    float lum2 = knee + e / ( 1.0 + e / uRoadKnee.y );
+    outgoingLight *= lum2 / max( lum, 1e-4 );
+  }
+}
+#include <opaque_fragment>`;
 const WORLD_NORMAL_FS = /* glsl */`
 {
   normal = normalize( ( viewMatrix * vec4( triN, 0.0 ) ).xyz );
@@ -892,6 +956,11 @@ export class RoadMaterial extends VertexPBRMaterial {
       ROAD_GLOSS.wetFloor,
       knob('wet') !== null ? +knob('wet') : ROAD_GLOSS.wet * gk) };
     shader.uniforms.uWetBox = { value: new THREE.Vector4(WET_BOX.x, WET_BOX.z, WET_BOX.hw, WET_BOX.hd) };
+    shader.uniforms.uRoadKnee = { value: new THREE.Vector3(
+      knob('knee') !== null ? +knob('knee') : ROAD_KNEE.knee,
+      knob('kneew') !== null ? +knob('kneew') : ROAD_KNEE.width,
+      ROAD_KNEE.stripeKnee) };
+    shader.uniforms.uPaveTint = { value: knob('pave') !== null ? +knob('pave') : ROAD_KNEE.paveTint };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>' + ROAD_PARS_VS)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;')
@@ -901,7 +970,8 @@ export class RoadMaterial extends VertexPBRMaterial {
       .replace('#include <map_fragment>', ROAD_FS)
       .replace('#include <roughnessmap_fragment>', ROAD_ROUGH_FS)
       .replace('#include <metalnessmap_fragment>', TRI_METAL_FS)
-      .replace('#include <normal_fragment_maps>', WORLD_NORMAL_FS + '\n#include <normal_fragment_maps>');
+      .replace('#include <normal_fragment_maps>', WORLD_NORMAL_FS + '\n#include <normal_fragment_maps>')
+      .replace('#include <opaque_fragment>', ROAD_KNEE_FS);
   }
   customProgramCacheKey() { return 'drive_road'; }
 }

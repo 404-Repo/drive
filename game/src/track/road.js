@@ -61,7 +61,7 @@
  * Tiles: receiveShadow true, userData { kind: 'road', block, sMin, sMax, surfaces }.
  */
 import * as THREE from 'three';
-import { Spline, START_PROGRESS } from './spline.js?v=r2-20260906125925';
+import { Spline, START_PROGRESS } from './spline.js?v=r3-20260906150928';
 
 export const ROAD = {
   KERB_W: 0.6, KERB_H: 0.24,          // substrate; the kerb_module asset (0.30 tall) sits on the road at the kerb base
@@ -73,7 +73,18 @@ export const ROAD = {
   // the race kerb APRON (round 2 fix, item 4): where kerb_module stations run, a 1.2 m striped rumble strip on the
   // road surface inside the edge, red and white at the asset's 1 m pitch and phase, rising 6 cm to the kerb block
   // in two facets (relief the sun lands on), so the kerb reads 1.8 m wide from the chase camera instead of 0.6
-  APRON_W: 1.2, APRON_H: 0.06, APRON_KNEE: 0.7, APRON_KNEE_H: 0.025, APRON_ROUGH: 0.50,
+  APRON_W: 1.2, APRON_W_WIDE: 1.6, APRON_ROUGH: 0.50,
+  // round 3 fix, item 4 (critic: "the beach kerb is a flat stripe", "the harbour straight has no kerb"): the apron is now
+  // a CONVEX rumble profile (4, 9, 15 cm over the slope) ending in a 62 degree RISER up to the kerb TOP at RACE_KERB_H,
+  // and the top is striped too, so apron, riser and top are one continuous red and white kerb at the module's 1 m
+  // pitch: a lit top, a lit or shaded riser (the sun is 14 degrees up, so the riser facing it is bright and the one
+  // facing away is in shade) and, because the ribbon tiles now cast within CAST_DIST, a shadow onto the road.
+  // RACE_KERB_H is 4 cm over the plan's 0.30 so the level's kerb_module (placed 2 cm up, 0.30 tall) is fully inside
+  // the ribbon's kerb until the level stops placing it (work/fix3_track/NOTES.md); the pavement stays at 0.30.
+  RACE_KERB_H: 0.34, RISER_W: 0.10, RISER_IN: 0.02, KERB_EDGE: 0.06,
+  APRON_SLOPE: [[0, 0], [0.37, 0.04], [0.74, 0.09], [1, 0.15]],   // (fraction of the slope run, rise) up to the riser foot
+  PAINT_WEAR: [0.55, 0.78], PAINT_WEAR_MIX: 0.85,                  // paint lines break where the surface is worn (2.4 m noise)
+  DRAIN_PITCH: 9, DRAIN_SIZE: 0.45, DRAIN_ROUGH: 0.55,             // drain covers along both edges
   OUTER_TYRE: 0.75,                   // the outer lanes carry the pack's rubber at this fraction of the racing line's marks
   EDGE_LINE_TOWN: 0.25, GUTTER_W: 0.5, GUTTER_DIP: 0.03,      // cobble streets: edge paint and the stone gutter inside it
   CHANNEL_W: 0.36, CHANNEL_ROUGH: 0.70,                        // the centre drain channel down the old town streets (C and E)
@@ -94,6 +105,8 @@ export const PALETTE = {
   asphalt: 0x65686e, cobble: 0xa39f99, whitewash: 0xf1e6d2, warmStone: 0xcdb897, stoneShade: 0x8d7b63,
   pavement: 0xb0aba3, shoulder: 0x6c6e73, sand: 0xe6cf9c,
   gutter: 0x858179, channel: 0x6a6760, patch: 0x777a7e,
+  patchDark: 0x585b62, patchLight: 0x74777d,   // asphalt repairs on the asphalt sections: a fresh (darker) or faded (lighter) rectangle
+  drain: 0x3a3f46, drainRim: 0x8d7b63,          // drain covers: metal dark with a stone shade rim
   // paint and the apron stripes: a near neutral white (saturation 0.02, the lightness paintKerb gives the block tops) so the
   // warm sun lands it under the claims' white (luma over 200, saturation under 0.20) and a kerb red a shade
   // lighter than the palette's 0xd6402f (hue 5, HSV saturation 0.75) so the sun does not push it salmon; the same
@@ -146,7 +159,9 @@ function mod(a, n) { return ((a % n) + n) % n; }
  */
 export function sideProfile(spline, s, side) {
   const R = (a, b) => spline.inWaypointRange(s, a, b);
-  if (R(0, 7)) return side < 0 ? { kind: 'quay', white: false } : { kind: 'pavement', white: false };          // A
+  // A: the harbour straight carries the race kerb on BOTH sides (round 3, critic bar pair 1: "no kerb and one lane
+  // line on flat asphalt"); the quay side keeps its deck strip beyond the kerb block
+  if (R(0, 7)) return side < 0 ? { kind: 'quay', white: true } : { kind: 'pavement', white: true };            // A
   if (R(7, 11)) return { kind: 'pavement', white: true };                                                        // B both
   if (R(11, 20)) return { kind: 'pavement', white: side > 0 ? true : R(12, 16) };                               // C outer, inner at the S bends
   if (R(20, 32)) return { kind: 'pavement', white: true };                                                       // D, E both
@@ -164,11 +179,25 @@ export function yAt(q, l) {
   const lb = l < -h ? -h : l > h ? h : l;
   return q.y - lb * Math.tan(q.bank * DEG);
 }
-/** Apron rise in metres at d metres into the race kerb apron from its road side (0 at the road, APRON_H at the block). */
-export function apronRise(d) {
-  const W = ROAD.APRON_W, K = ROAD.APRON_KNEE, KH = ROAD.APRON_KNEE_H, H = ROAD.APRON_H;
-  const x = clamp(d, 0, W);
-  return x < K ? KH * x / K : KH + (H - KH) * (x - K) / (W - K);
+/** Race kerb apron width for a road width: 1.2 m, 1.6 m on the 14 m harbour straight (blended over 12.5 to 13.5). */
+export function apronWidth(width) { return ROAD.APRON_W + (ROAD.APRON_W_WIDE - ROAD.APRON_W) * smoothstep(12.5, 13.5, width); }
+/**
+ * Race kerb profile height at d metres outward from the apron's road side (apron width W): the convex slope
+ * (APRON_SLOPE) over the first W - RISER_W metres, the riser up to RACE_KERB_H ending RISER_IN inside the road edge,
+ * then the flat top (the kerb block, KERB_W beyond the edge). Used by the ribbon and by the probe, so the kart rides
+ * exactly what it sees.
+ */
+export function apronRise(d, W = ROAD.APRON_W) {
+  const run = W - ROAD.RISER_W, riserEnd = W - ROAD.RISER_IN, H = ROAD.RACE_KERB_H;
+  if (d <= 0) return 0;
+  if (d < run) {
+    const t = d / run, P = ROAD.APRON_SLOPE;
+    for (let k = 1; k < P.length; k++) if (t <= P[k][0]) { const [t0, y0] = P[k - 1], [t1, y1] = P[k]; return y0 + (y1 - y0) * (t - t0) / (t1 - t0); }
+    return P[P.length - 1][1];
+  }
+  const foot = ROAD.APRON_SLOPE[ROAD.APRON_SLOPE.length - 1][1];
+  if (d < riserEnd) return foot + (H - foot) * (d - run) / (riserEnd - run);
+  return H;
 }
 /** Interpolated spline row between a and b at t (for sub row quads: the apron stripes change every metre, rows every 1.5). */
 function lerpRow(a, b, t, out) {
@@ -277,11 +306,21 @@ export function buildRoad(THREE_, spline, opts = {}) {
       if (!white && runStart >= 0) flush(s);
     }
     flush(L);
+    // a run that ends at the lap end and one that starts at s = 0 are one run across the origin (the harbour
+    // straight holds waypoint 0): merge them so the stripes and the stations keep one phase over the wrap
+    const rs = runs[side];
+    if (rs.length > 1 && rs[0].start < 1e-6 && Math.abs(rs[rs.length - 1].start + rs[rs.length - 1].len - L) < 1e-6) {
+      const last = rs.pop(), first = rs.shift();
+      const len = last.len + first.len, count = Math.max(1, Math.round(len / 4));
+      rs.push({ start: last.start, len, count, pitch: len / count });
+    }
   }
   function stripeAt(s, side) {
     s = mod(s, L);
     for (const r of runs[side]) {
-      if (s < r.start || s >= r.start + r.len) continue;
+      const sl = s < r.start ? s + L : s;   // a run may cross the lap origin
+      if (sl < r.start || sl >= r.start + r.len) continue;
+      s = sl;
       const k = Math.min(r.count - 1, Math.floor((s - r.start) / r.pitch));
       const sc = r.start + r.pitch * (k + 0.5);
       const xl = side > 0 ? s - sc : sc - s;
@@ -311,7 +350,7 @@ export function buildRoad(THREE_, spline, opts = {}) {
     apronL[i] = sideProfile(spline, sm, -1).white ? 1 : 0; apronR[i] = sideProfile(spline, sm, 1).white ? 1 : 0;
   }
   /** metres of the road edge on one side that the racing line and the marks must stay off: the apron, or the paint and gutter */
-  const edgeInset = (i, side) => ((side < 0 ? apronL[i] : apronR[i]) ? ROAD.APRON_W : (rows[i].surface === 'asphalt' ? ROAD.EDGE_LINE : ROAD.EDGE_LINE_TOWN + ROAD.GUTTER_W));
+  const edgeInset = (i, side) => ((side < 0 ? apronL[i] : apronR[i]) ? apronWidth(rows[i].width) : (rows[i].surface === 'asphalt' ? ROAD.EDGE_LINE : ROAD.EDGE_LINE_TOWN + ROAD.GUTTER_W));
   // the racing line must stay off the apron, the paint and the gutter: clamp to the inner surface on each side
   for (let i = 0; i < N; i++) {
     const h = rows[i].width / 2;
@@ -328,33 +367,47 @@ export function buildRoad(THREE_, spline, opts = {}) {
    * Base colour of the road surface at lateral l for the pair starting at row i (paint aware).
    * Writes surfOut.v (aSurface), surfOut.tex (aSurf), surfOut.rough (aRM.x).
    */
+  const wornC = new THREE.Color();
+  /**
+   * Paint that BREAKS where the surface is worn (round 3, item 4: "paint lines sit in the road surface and break
+   * where the surface is worn"): a 2.4 m value noise along s (its own seed per line) gates the paint toward the
+   * paving under it, PAINT_WEAR_MIX at full wear, and the roughness follows so a worn dash loses its gloss too.
+   */
+  function wornPaint(base, sMid, seed, surfOut) {
+    const w = smoothstep(ROAD.PAINT_WEAR[0], ROAD.PAINT_WEAR[1], noise2(sMid, seed, 2.4)) * ROAD.PAINT_WEAR_MIX;
+    if (w <= 0) return C.paint;
+    surfOut.rough = ROAD.PAINT_ROUGH + (ROAD.ROUGH - ROAD.PAINT_ROUGH) * w;
+    return wornC.copy(C.paint).lerp(base, w);
+  }
   function roadColourAt(i, sMid, l, surfOut) {
     const r = rows[i];
     const h = r.width / 2;
     const asphalt = r.surface === 'asphalt';
     const side = l < 0 ? -1 : 1, al = Math.abs(l);
     const apron = side < 0 ? apronL[i] : apronR[i];
+    const AW = apronWidth(r.width);
     surfOut.tex = asphalt ? TEX.asphalt : TEX.cobble; surfOut.rough = ROAD.ROUGH; surfOut.edge = false;
     for (const ss of sills) if (Math.abs(sMid - ss) < ROAD.SILL_LEN / 2) { surfOut.v = SURF.sill; surfOut.tex = TEX.cobble; surfOut.rough = 0.80; return C.warmStone; }
     // the race kerb apron owns the edge on its side (its own quads, see emitApron): anything asked for there is paint
-    if (apron && al > h - ROAD.APRON_W) { surfOut.v = SURF.apron; surfOut.rough = ROAD.APRON_ROUGH; surfOut.edge = true; surfOut.tex = TEX.asphalt; return C.kerbWhite; }
+    if (apron && al > h - AW) { surfOut.v = SURF.apron; surfOut.rough = ROAD.APRON_ROUGH; surfOut.edge = true; surfOut.tex = TEX.asphalt; return C.kerbWhite; }
     // the dashed lane lines, three lanes, half a period out of phase with the centre dash (asphalt and cobble alike)
     const period = ROAD.DASH_ON + ROAD.DASH_OFF;
     const laneOn = mod(sMid, ROAD.LANE_ON + ROAD.LANE_OFF) < ROAD.LANE_ON;
     const lane = r.width * ROAD.LANE_FRAC;
+    const paving = asphalt ? C.asphalt : C.cobble;
     if (asphalt) {
-      if (!apron && al > h - ROAD.EDGE_LINE) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.edge = true; return C.paint; }
+      if (!apron && al > h - ROAD.EDGE_LINE) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.edge = true; return wornPaint(paving, sMid, 510 + side * 37, surfOut); }
       const dashOn = mod(sMid, period) < ROAD.DASH_ON;
-      if (dashOn && al < ROAD.DASH_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; return C.paint; }
-      if (laneOn && Math.abs(al - lane) < ROAD.LANE_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; return C.paint; }
+      if (dashOn && al < ROAD.DASH_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; return wornPaint(paving, sMid, 620, surfOut); }
+      if (laneOn && Math.abs(al - lane) < ROAD.LANE_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; return wornPaint(paving, sMid, 700 + side * 41, surfOut); }
       surfOut.v = SURF.asphalt;
       return C.asphalt;
     }
     // town: edge paint at the gutter lip, the stone gutter inside it, cobble between (none of that beside the apron)
     // paint on the cobbles takes the flatter asphalt set (paint fills the joints; the cobble set's joints cut a line into dashes)
-    if (!apron && al > h - ROAD.EDGE_LINE_TOWN) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.edge = true; surfOut.tex = TEX.asphalt; return C.paint; }
+    if (!apron && al > h - ROAD.EDGE_LINE_TOWN) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.edge = true; surfOut.tex = TEX.asphalt; return wornPaint(paving, sMid, 510 + side * 37, surfOut); }
     if (!apron && al > h - ROAD.EDGE_LINE_TOWN - ROAD.GUTTER_W) { surfOut.v = SURF.gutter; surfOut.rough = ROAD.GUTTER_ROUGH; surfOut.edge = true; return C.gutter; }
-    if (laneOn && Math.abs(al - lane) < ROAD.LANE_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.tex = TEX.asphalt; return C.paint; }
+    if (laneOn && Math.abs(al - lane) < ROAD.LANE_W / 2) { surfOut.v = SURF.paint; surfOut.rough = ROAD.PAINT_ROUGH; surfOut.tex = TEX.asphalt; return wornPaint(paving, sMid, 700 + side * 41, surfOut); }
     surfOut.v = SURF.cobble;
     return C.cobble;
   }
@@ -381,7 +434,7 @@ export function buildRoad(THREE_, spline, opts = {}) {
   function stops(h, width, asphalt, apL, apR) {
     const arr = [];
     const push = (l, dy = 0) => arr.push({ l, dy });
-    const A = ROAD.APRON_W, D = ROAD.DASH_W / 2, LW = ROAD.LANE_W / 2, lane = width * ROAD.LANE_FRAC;
+    const A = apronWidth(width), D = ROAD.DASH_W / 2, LW = ROAD.LANE_W / 2, lane = width * ROAD.LANE_FRAC;
     // inner span: from the left inner edge to the right inner edge, with the lane lines and the centre dash on their own quads
     const interior = (l0, l1) => {
       const cuts = [l0, -lane - LW, -lane + LW, -D, D, lane - LW, lane + LW, l1];
@@ -415,27 +468,63 @@ export function buildRoad(THREE_, spline, opts = {}) {
    * two facets rising APRON_KNEE_H over the first APRON_KNEE metres and APRON_H at the block.
    */
   const RA = {}, RB = {};
+  const hiC = new THREE.Color(), fnA = new THREE.Vector3(), fnB = new THREE.Vector3();
+  /**
+   * The race kerb on one side of the row pair, one continuous striped profile (round 3, item 4): the convex apron
+   * slope, the riser and the kerb top, every stripe on its own sub row quads in the module's phase, each facet
+   * with its true normal (the riser tilts toward the road, so the sun lights the riser that faces it and shades the
+   * other), the top's road edge a painted highlight strip (style lock: every convex edge carries a lighter strip).
+   */
   function emitApron(tb, a, b, sa, sb, side, i) {
     const asphaltTex = TEX.asphalt;   // painted concrete: the flatter set on both pavings, so the stripes stay pure
-    const W = ROAD.APRON_W, K = ROAD.APRON_KNEE;
+    const K = ROAD.KERB_W;
     for (const seg of stripeSegments(sa, sb, side)) {
       if (seg.s1 - seg.s0 < 0.01) continue;
       lerpRow(a, b, (seg.s0 - sa) / ds, RA); lerpRow(a, b, (seg.s1 - sa) / ds, RB);
       Spline.normalOf(RA, nA2); Spline.normalOf(RB, nB2);
       const ha = RA.width / 2, hb = RB.width / 2;
+      const Wa = apronWidth(RA.width), Wb = apronWidth(RB.width);
       const base = seg.red ? C.kerbRed : C.kerbWhite;
       const col = tone(base, (seg.s0 + seg.s1) / 2, side * ha, 0);
-      // facets from the road side (d = 0) to the block (d = W): [0, K] and [K, W]
-      for (const [d0, d1] of [[0, K], [K, W]]) {
-        const la0 = side * (ha - W + d0), la1 = side * (ha - W + d1), lb0 = side * (hb - W + d0), lb1 = side * (hb - W + d1);
-        emit(tb, RA, RB, seg.s0, seg.s1, la0, la1, lb0, lb1,
-          yAt(RA, la0) + apronRise(d0), yAt(RA, la1) + apronRise(d1), yAt(RB, lb0) + apronRise(d0), yAt(RB, lb1) + apronRise(d1),
-          nA2, nB2, col, SURF.apron, asphaltTex, ROAD.APRON_ROUGH);
+      hiC.copy(col).multiplyScalar(seg.red ? 1.10 : 1.03);
+      // facets as fractions of the apron width (the slope stops, the riser foot, the riser head), then metres beyond
+      // the road edge for the top (edge highlight, top)
+      const run = Wa - ROAD.RISER_W, P = ROAD.APRON_SLOPE;
+      const facets = [];
+      for (let k = 1; k < P.length; k++) facets.push([P[k - 1][0] * run, P[k][0] * run, SURF.apron, ROAD.APRON_ROUGH, col]);
+      facets.push([run, Wa - ROAD.RISER_IN, SURF.kerb, ROAD.APRON_ROUGH, col]);                     // the riser
+      facets.push([Wa - ROAD.RISER_IN, Wa + ROAD.KERB_EDGE, SURF.kerb, 0.45, hiC]);                 // the painted edge of the top
+      facets.push([Wa + ROAD.KERB_EDGE, Wa + K, SURF.kerb, 0.45, col]);                             // the top
+      for (const [d0, d1, kind, rough, colour] of facets) {
+        // the same facet on row b, scaled to its apron width so the profile stays continuous when the width changes
+        const e0 = d0 * Wb / Wa, e1 = d1 * Wb / Wa;
+        const la0 = side * (ha - Wa + d0), la1 = side * (ha - Wa + d1), lb0 = side * (hb - Wb + e0), lb1 = side * (hb - Wb + e1);
+        const ya0 = yAt(RA, la0) + apronRise(d0, Wa), ya1 = yAt(RA, la1) + apronRise(d1, Wa);
+        const yb0 = yAt(RB, lb0) + apronRise(e0, Wb), yb1 = yAt(RB, lb1) + apronRise(e1, Wb);
+        // facet normal: up tilted toward the road by the facet's slope (rise dy over run dl outward)
+        const dl = Math.max(1e-4, d1 - d0), dy = ya1 - ya0;
+        fnA.set(-RA.nx * side * dy, dl, -RA.nz * side * dy).normalize();
+        fnB.set(-RB.nx * side * dy, dl, -RB.nz * side * dy).normalize();
+        emit(tb, RA, RB, seg.s0, seg.s1, la0, la1, lb0, lb1, ya0, ya1, yb0, yb1, fnA, fnB, colour, kind, asphaltTex, rough);
       }
     }
   }
   const nA2 = new THREE.Vector3(), nB2 = new THREE.Vector3();
-  /** Deterministic asphalt repair patches on the cobble streets: [{ s0, s1, l0, l1 }]. */
+  const RC = {}, RD = {}, nC2 = new THREE.Vector3(), nD2 = new THREE.Vector3();
+  /** A flat rectangle [s0, s1] x [l0, l1] on the road surface, dy up, clipped to the row pair [sa, sb]. */
+  function emitRect(tb, a, b, sa, sb, s0, s1, l0, l1, dy, colour, surf, tex, rough) {
+    const c0 = Math.max(sa, s0), c1 = Math.min(sb, s1);
+    if (c1 - c0 < 0.01) return;
+    lerpRow(a, b, (c0 - sa) / ds, RC); lerpRow(a, b, (c1 - sa) / ds, RD);
+    Spline.normalOf(RC, nC2); Spline.normalOf(RD, nD2);
+    emit(tb, RC, RD, c0, c1, l0, l1, l0, l1, yAt(RC, l0) + dy, yAt(RC, l1) + dy, yAt(RD, l0) + dy, yAt(RD, l1) + dy, nC2, nD2, colour, surf, tex, rough);
+  }
+  /**
+   * Deterministic repair patches: [{ s0, s1, l0, l1, colour }]. Asphalt patches on the cobble streets (the asphalt
+   * texture over the cobbles), and on the asphalt sections (round 3, item 4) a fresh darker or a faded lighter
+   * rectangle of the same asphalt, so the straights carry things a driver reads; they lie over the lane paint, which
+   * is one more way the paint breaks.
+   */
   const patches = [];
   for (let slot = 0; slot * ROAD.PATCH_PITCH < L; slot++) {
     const base = slot * ROAD.PATCH_PITCH;
@@ -443,12 +532,32 @@ export function buildRoad(THREE_, spline, opts = {}) {
     if (r1 > ROAD.PATCH_CHANCE) continue;
     const s0 = base + r2 * (ROAD.PATCH_PITCH - 6), len = 2.4 + r3 * 3.2;
     const q = spline.atDistance(s0 + len / 2, {});
-    if (q.surface !== 'cobble') continue;
     if (sills.some((ss) => Math.abs(s0 + len / 2 - ss) < ROAD.SILL_LEN / 2 + len)) continue;
-    const hIn = q.width / 2 - ROAD.EDGE_LINE_TOWN - ROAD.GUTTER_W - 0.3;
+    if (Math.abs(s0 + len / 2 - startS) < 12) continue;   // never under the start band or the grid slots
+    const onAsphalt = q.surface === 'asphalt';
+    const hIn = q.width / 2 - (onAsphalt ? apronWidth(q.width) : ROAD.EDGE_LINE_TOWN + ROAD.GUTTER_W) - 0.3;
     const w = 1.2 + r1 * 1.6;
     const lc = -hIn + w / 2 + r4 * (2 * hIn - w);
-    patches.push({ s0, s1: s0 + len, l0: lc - w / 2, l1: lc + w / 2 });
+    const colour = onAsphalt ? (hash2(slot * 1.7, 2.3) < 0.5 ? C.patchDark : C.patchLight) : C.patch;
+    patches.push({ s0, s1: s0 + len, l0: lc - w / 2, l1: lc + w / 2, colour, hIn });
+  }
+  /**
+   * Drain covers (round 3, item 4): a DRAIN_SIZE square of metal dark with a stone shade rim, every DRAIN_PITCH metres
+   * with a jitter, on both sides, just inside the apron or the edge paint (in town: inside the gutter, on the flat
+   * cobbles), never at the start band, the sills or the pads: [{ s0, s1, side }].
+   */
+  const drains = [];
+  for (let slot = 0; slot * ROAD.DRAIN_PITCH < L; slot++) {
+    for (const side of [-1, 1]) {
+      const j = hash2(slot * 4.3 + side, 3.9);
+      const s0 = slot * ROAD.DRAIN_PITCH + (side < 0 ? 0 : ROAD.DRAIN_PITCH / 2) + (j - 0.5) * 3;
+      const sc = s0 + ROAD.DRAIN_SIZE / 2;
+      if (Math.abs(sc - startS) < 14) continue;
+      if (sills.some((ss) => Math.abs(sc - ss) < ROAD.SILL_LEN / 2 + 2)) continue;
+      const q = spline.atDistance(sc, {});
+      if (PAD_DEFS.some((p) => Math.hypot(q.x - p.x, q.z - p.z) < 6)) continue;
+      drains.push({ s0, s1: s0 + ROAD.DRAIN_SIZE, side });
+    }
   }
 
   const nA = new THREE.Vector3(), nB = new THREE.Vector3(), sideN = new THREE.Vector3();
@@ -477,14 +586,24 @@ export function buildRoad(THREE_, spline, opts = {}) {
     }
     const inSill = sills.some((ss) => Math.abs(sMid - ss) < ROAD.SILL_LEN / 2);
 
-    // ---- asphalt repair patches on the cobble streets (own layer 5 mm up, the asphalt texture)
-    if (!asphalt && !inSill) {
+    // ---- repair patches (own layer 5 mm up, the asphalt texture): asphalt on the cobble streets, fresh or faded
+    // asphalt on the asphalt sections
+    if (!inSill) {
       for (const p of patches) {
         if (sb <= p.s0 || sa >= p.s1) continue;
-        const l0 = clamp(p.l0, -ha + 0.9, ha - 0.9), l1 = clamp(p.l1, -ha + 0.9, ha - 0.9);
+        const l0 = clamp(p.l0, -p.hIn, p.hIn), l1 = clamp(p.l1, -p.hIn, p.hIn);
         if (l1 - l0 < 0.4) continue;
-        const col = tone(C.patch, sMid, l0 + 0.3);
-        stripFlat(tb, a, b, sa, sb, l0, l1, l0, l1, 0.005, nA, nB, col, SURF.patch, TEX.asphalt, ROAD.PATCH_ROUGH);
+        const col = tone(p.colour, sMid, l0 + 0.3);
+        emitRect(tb, a, b, sa, sb, p.s0, p.s1, l0, l1, 0.005, col, SURF.patch, TEX.asphalt, ROAD.PATCH_ROUGH);
+      }
+      // ---- drain covers (rim 8.5 mm up, cover 9.5 mm up, over every other layer)
+      for (const d of drains) {
+        if (sb <= d.s0 || sa >= d.s1) continue;
+        const ap = d.side < 0 ? apronL[i] : apronR[i];
+        const inset = ap ? apronWidth(a.width) : (asphalt ? ROAD.EDGE_LINE : ROAD.EDGE_LINE_TOWN + ROAD.GUTTER_W);
+        const lc = d.side * (ha - inset - 0.15 - ROAD.DRAIN_SIZE / 2), hw = ROAD.DRAIN_SIZE / 2;
+        emitRect(tb, a, b, sa, sb, d.s0 - 0.05, d.s1 + 0.05, lc - hw - 0.05, lc + hw + 0.05, 0.0085, tone(C.drainRim, sMid, lc), SURF.patch, TEX.asphalt, 0.75);
+        emitRect(tb, a, b, sa, sb, d.s0, d.s1, lc - hw, lc + hw, 0.0095, tone(C.drain, sMid, lc), SURF.patch, TEX.asphalt, ROAD.DRAIN_ROUGH);
       }
     }
 
@@ -569,7 +688,32 @@ export function buildRoad(THREE_, spline, opts = {}) {
       sideN.set(a.nx * -side, 0, a.nz * -side);  // faces the road
       const K = ROAD.KERB_W, KH = ROAD.KERB_H;
       const o = (l) => side * l;               // outward lateral helper (positive metres beyond the edge)
-      if (prof.kind === 'pavement' || prof.kind === 'kerb') {
+      if (prof.white) {
+        // the race kerb: apron, riser and striped top were emitted by emitApron (top at RACE_KERB_H over ea..ea + K);
+        // here only what lies beyond the block: the outer face down to the pavement, shoulder or quay deck, and that strip
+        const RH = ROAD.RACE_KERB_H;
+        const outN = tmpN.set(a.nx * side, 0, a.nz * side);   // faces away from the road
+        const outer = (yTop, yFoot) => emit(tb, a, b, sa, sb, ea + o(K), ea + o(K), eb + o(K), eb + o(K), yea + yTop, yea + yFoot, yeb + yTop, yeb + yFoot, outN, outN, tone(C.stoneShade, sMid, ea + o(K)), SURF.kerb, TEX.cobble, 0.84);
+        if (prof.kind === 'pavement') {
+          const PH = ROAD.PAVE_H, PW = ROAD.PAVE_W;
+          outer(RH, PH);
+          for (let k = 0; k < 2; k++) {
+            const l0 = K + PW * k / 2, l1 = K + PW * (k + 1) / 2;
+            emit(tb, a, b, sa, sb, ea + o(l0), ea + o(l1), eb + o(l0), eb + o(l1), yea + PH, yea + PH, yeb + PH, yeb + PH, UP, UP, tone(C.pavement, sMid, ea + o((l0 + l1) / 2)), SURF.pavement, TEX.cobble, ROAD.ROUGH);
+          }
+          emit(tb, a, b, sa, sb, ea + o(K + PW), ea + o(K + PW + 0.5), eb + o(K + PW), eb + o(K + PW + 0.5), yea + PH, yea + PH - 0.10, yeb + PH, yeb + PH - 0.10, UP, UP, tone(C.pavement, sMid, ea + o(K + PW)), SURF.pavement, TEX.cobble, ROAD.ROUGH);
+        } else if (prof.kind === 'quay') {
+          // the quay side of the harbour straight: the kerb block stands on the quay deck, the deck strip runs on at road level
+          const QW = ROAD.QUAY_W;
+          outer(RH, 0);
+          emit(tb, a, b, sa, sb, ea + o(K), ea + o(QW), eb + o(K), eb + o(QW), yea, yea, yeb, yeb, UP, UP, tone(C.warmStone, sMid, ea + o((K + QW) / 2)), SURF.quay, TEX.cobble, 0.84);
+        } else {
+          const SW = ROAD.SHOULDER_W;
+          outer(RH, RH - 0.02);
+          emit(tb, a, b, sa, sb, ea + o(K), ea + o(K + SW), eb + o(K), eb + o(K + SW), yea + RH - 0.02, yea + RH - 0.04, yeb + RH - 0.02, yeb + RH - 0.04, UP, UP, tone(C.shoulder, sMid, ea + o(K + SW / 2)), SURF.shoulder, TEX.asphalt, ROAD.ROUGH);
+          emit(tb, a, b, sa, sb, ea + o(K + SW), ea + o(K + SW + 0.5), eb + o(K + SW), eb + o(K + SW + 0.5), yea + RH - 0.04, yea - 0.06, yeb + RH - 0.04, yeb - 0.06, UP, UP, tone(C.shoulder, sMid, ea + o(K + SW)), SURF.shoulder, TEX.asphalt, ROAD.ROUGH);
+        }
+      } else if (prof.kind === 'pavement' || prof.kind === 'kerb') {
         // kerb inner face (vertical)
         emit(tb, a, b, sa, sb, ea, ea, eb, eb, yea, yea + KH, yeb, yeb + KH, sideN, sideN, tone(C.warmStone, sMid, ea), SURF.kerb, a.surface === 'asphalt' ? TEX.asphalt : TEX.cobble, 0.84);
         // kerb top
@@ -606,14 +750,15 @@ export function buildRoad(THREE_, spline, opts = {}) {
   {
     const q0 = spline.atDistance(startS - 0.5, {}), q1 = spline.atDistance(startS, {}), q2 = spline.atDistance(startS + 0.5, {});
     const rowsQ = [q0, q1, q2];
-    const h = q1.width / 2;
+    const h = q1.width / 2 - apronWidth(q1.width);   // between the two race kerb aprons
     const n = Math.round(h * 2 / 0.5);
     const tb = tileFor(q1.x, q1.z);
     for (let j = 0; j < 2; j++) {
       const a = rowsQ[j], b = rowsQ[j + 1];
       Spline.normalOf(a, nA); Spline.normalOf(b, nB);
+      const sq = 2 * h / n;
       for (let k = 0; k < n; k++) {
-        const l0 = -h + k * 0.5, l1 = l0 + 0.5;
+        const l0 = -h + k * sq, l1 = l0 + sq;
         const white = (j + k) % 2 === 0;
         const col = tone(white ? C.whitewash : C.asphalt, a.s, l0);
         emit(tb, a, b, a.s, b.s, l0, l1, l0, l1, yAt(a, l0) + 0.008, yAt(a, l1) + 0.008, yAt(b, l0) + 0.008, yAt(b, l1) + 0.008, nA, nB, col, SURF.chequer, TEX.asphalt, 0.70);
@@ -653,10 +798,33 @@ export function buildRoad(THREE_, spline, opts = {}) {
     m.userData = { kind: 'road', block: key, sMin: tb.sMin, sMax: tb.sMax, surfaces: Array.from(tb.surfaces) };
     meshes.push(m);
   }
+  // The race kerb stands 0.34 m proud of the road and must throw its shadow onto it (round 3, item 4: "a shaded
+  // outer face that casts a shadow onto the road"; the level's kerb_module sits in the coarse bake group, which never
+  // casts). main.js adds the tiles with castShadow false and toggles the terrain tiles by distance; the ribbon does
+  // the same for itself here: the first tile rendered each frame sets castShadow on every tile within castDist of
+  // the camera (the shadow pass of the NEXT frame picks it up; onBeforeRender does not run in the shadow pass). A
+  // tile behind the camera and out of range stays off. `tier.castDist` is render/quality.js's number (40 high, 30
+  // phone); `road.setCastDist(m)` overrides it.
+  const tier = opts.tier || {};
+  let castDist = tier.castDist || (tier.name === 'phone' ? 30 : 40);
+  const centres = meshes.map((m) => { const bs = m.geometry.boundingSphere; return { m, c: bs.center.clone(), r: bs.radius }; });
+  let lastFrame = -1;
+  const camPos = new THREE.Vector3();
+  const updateCasters = (renderer, camera) => {
+    const f = renderer.info.render.frame;
+    if (f === lastFrame) return;
+    lastFrame = f;
+    camPos.setFromMatrixPosition(camera.matrixWorld);
+    for (const t of centres) {
+      const on = camPos.distanceTo(t.c) - t.r < castDist;
+      if (on !== t.m.castShadow) t.m.castShadow = on;
+    }
+  };
+  for (const m of meshes) m.onBeforeRender = (renderer, scene, camera) => updateCasters(renderer, camera);
 
   // ---- stations for the level builder: one per module inside each run (the same runs the apron stripes follow)
   const kerbs = [];
-  for (const side of [-1, 1]) for (const r of runs[side]) for (let k = 0; k < r.count; k++) kerbs.push(kerbStation(r.start + r.pitch * (k + 0.5), side));
+  for (const side of [-1, 1]) for (const r of runs[side]) for (let k = 0; k < r.count; k++) kerbs.push(kerbStation(mod(r.start + r.pitch * (k + 0.5), L), side));
   function kerbStation(s, side) {
     const q = spline.atDistance(s, {});
     const h = q.width / 2;
@@ -719,12 +887,14 @@ export function buildRoad(THREE_, spline, opts = {}) {
     const h = q.width / 2, l = n.lateral, al = Math.abs(l), side = l < 0 ? -1 : 1;
     const yEdge = yAt(q, side * h);
     const prof = sideProfile(spline, n.s, side);
+    const AW = apronWidth(q.width);
     if (al <= h) {
       const pad = padAt(x, z);
       let dip = 0;
-      if (prof.white && al > h - ROAD.APRON_W) {
-        // the race kerb apron rises 6 cm to the block; the kart rides it (a rumble, not a step)
-        dip = apronRise(al - (h - ROAD.APRON_W));
+      if (prof.white && al > h - AW) {
+        // the race kerb apron: the convex rumble up to the riser foot, then the riser to the top; the kart rides the
+        // same profile the ribbon draws
+        dip = apronRise(al - (h - AW), AW);
       } else if (q.surface === 'cobble') {
         // the town gutter is dipped 3 cm in the mesh (a V, 0.5 m wide, inside the edge paint); the probe follows it
         const gc = h - ROAD.EDGE_LINE_TOWN - ROAD.GUTTER_W / 2;
@@ -733,6 +903,7 @@ export function buildRoad(THREE_, spline, opts = {}) {
       return { y: yAt(q, l) + dip, surface: pad ? 'pad' : q.surface, zone: 'road', lateral: l, q, index: n.index, progress: n.progress };
     }
     const K = ROAD.KERB_W;
+    if (prof.white && al <= h + K) return { y: yEdge + ROAD.RACE_KERB_H, surface: q.surface, zone: 'kerb', lateral: l, q, index: n.index, progress: n.progress };
     if (prof.kind === 'pavement' || prof.kind === 'kerb') {
       if (al <= h + K) return { y: yEdge + ROAD.KERB_H, surface: q.surface, zone: 'kerb', lateral: l, q, index: n.index, progress: n.progress };
       if (prof.kind === 'pavement') {
@@ -740,9 +911,9 @@ export function buildRoad(THREE_, spline, opts = {}) {
         if (al <= h + K + ROAD.PAVE_W + 0.5) { const t = (al - (h + K + ROAD.PAVE_W)) / 0.5; return { y: yEdge + ROAD.PAVE_H - 0.10 * t, surface: 'cobble', zone: 'apron', lateral: l, q, index: n.index, progress: n.progress }; }
         return null;
       }
-      const SW = ROAD.SHOULDER_W;
-      if (al <= h + K + SW) return { y: yEdge + ROAD.KERB_H - 0.02, surface: 'asphalt', zone: 'shoulder', lateral: l, q, index: n.index, progress: n.progress };
-      if (al <= h + K + SW + 0.5) { const t = (al - (h + K + SW)) / 0.5; return { y: yEdge + ROAD.KERB_H - 0.02 - (ROAD.KERB_H + 0.04) * t, surface: 'asphalt', zone: 'apron', lateral: l, q, index: n.index, progress: n.progress }; }
+      const SW = ROAD.SHOULDER_W, KH = prof.white ? ROAD.RACE_KERB_H - 0.02 : ROAD.KERB_H;
+      if (al <= h + K + SW) return { y: yEdge + KH - 0.02, surface: 'asphalt', zone: 'shoulder', lateral: l, q, index: n.index, progress: n.progress };
+      if (al <= h + K + SW + 0.5) { const t = (al - (h + K + SW)) / 0.5; return { y: yEdge + KH - 0.02 - (KH + 0.04) * t, surface: 'asphalt', zone: 'apron', lateral: l, q, index: n.index, progress: n.progress }; }
       return null;
     }
     if (prof.kind === 'shoulder') {
@@ -763,7 +934,9 @@ export function buildRoad(THREE_, spline, opts = {}) {
   return {
     tiles: meshes, kerbs, wallStations, padStations, pads, gapS,
     surfaceAt, heightAt, probe, padAt, material, sideProfile: (s, side) => sideProfile(spline, s, side),
-    stripeAt, kerbRuns: runs,
+    stripeAt, kerbRuns: runs, apronWidth, apronRise,
+    kerbInRibbon: true,                       // the striped kerb (apron, riser, top) is ribbon geometry; kerb_module is redundant
+    setCastDist: (d) => { castDist = d; },
     params: ROAD, SURF,
   };
 }

@@ -27,7 +27,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r2-20260906125925';
+import { getTier } from './quality.js?v=r3-20260906150928';
 
 /**
  * Bloom threshold in linear HDR. Round 1: lit whitewash measured 0.62 to 0.72 and the threshold was 0.92. Round 2
@@ -37,7 +37,7 @@ import { getTier } from './quality.js?v=r2-20260906125925';
  */
 export const BLOOM = { threshold: 4.0, strength: 0.28, radius: 0.35 };
 export const GRADE = { shadowCool: [0.975, 0.99, 1.045], highlightWarm: [1.04, 1.01, 0.965] };   // each channel within 6 percent of 1
-export const SPEED_LINES_MAX = 0.22;
+export const SPEED_LINES_MAX = 0.42;   // round 3 (kart -> render): 0.22 was invisible in a still at 33 m/s
 
 function knob(name) {
   try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; }

@@ -16,7 +16,7 @@
  * rule, kartBox for the claims kart mask ({ x, y, w, h } px and { nx, ny, nw, nh } fractions),
  * state (the race state), missingAssets, stamp and round for the debugger.
  */
-import { REST_PITCH_DEG } from '../kart/camera.js?v=r2-20260906125925';   // the chase camera's real rest pitch (round 2: -3.1; round 0 hard coded -6.8 here)
+import { REST_PITCH_DEG } from '../kart/camera.js?v=r3-20260906150928';   // the chase camera's real rest pitch (round 2: -3.1; round 0 hard coded -6.8 here)
 export { REST_PITCH_DEG };
 
 class FpsMeter {

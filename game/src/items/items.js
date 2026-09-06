@@ -28,11 +28,12 @@
  * `viewShield: true` in the constructor hands the visual back to the view for an A/B.
  */
 import * as THREE from 'three';
-import { preloadAssets } from '../../assetlib.js?v=r2-20260906125925';
-import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r2-20260906125925';
-import { Projectiles } from './projectiles.js?v=r2-20260906125925';
-import { Hazards } from './hazards.js?v=r2-20260906125925';
-import { ShieldFX, dotTexture } from './shield.js?v=r2-20260906125925';
+import { preloadAssets } from '../../assetlib.js?v=r3-20260906150928';
+import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r3-20260906150928';
+import { Projectiles } from './projectiles.js?v=r3-20260906150928';
+import { Hazards } from './hazards.js?v=r3-20260906150928';
+import { ShieldFX, dotTexture } from './shield.js?v=r3-20260906150928';
+import { ItemBoxFX } from './itembox.js?v=r3-20260906150928';
 
 export const ITEMS = {
   buoy:       { asset: 'chaser_buoy',  speed: 34, lock: 60, life: 8,  hit: 'spin' },
@@ -296,7 +297,11 @@ export class ItemSystem {
     if (!pads || !pads.length) pads = BOOST_PAD_ANCHORS.map((p) => ({ ...p, y: null }));
 
     const n = Math.max(8, this.bodies.length);
-    this.pools.item_box = new InstancePool(protos.item_box, anchors.length, { name: 'item_box' });
+    // round 3: the box is drawn as rainbow glass round the asset's core (itembox.js), not the asset's frame
+    // and panes through the InstancePool; `?boxfx=0` gives the round 2 look back for an A/B
+    const boxFx = !/(^|[?&])boxfx=0/.test(typeof location !== 'undefined' ? location.search : '');
+    this.pools.item_box = boxFx ? new ItemBoxFX(protos.item_box, anchors.length, { name: 'item_box' })
+      : new InstancePool(protos.item_box, anchors.length, { name: 'item_box' });
     this.pools.chaser_buoy = new InstancePool(protos.chaser_buoy, 8, { name: 'chaser_buoy' });
     this.pools.cannonball = new InstancePool(protos.cannonball, 8, { name: 'cannonball' });
     this.pools.spill_crate = new InstancePool(protos.spill_crate, ITEMS.crate.max, { name: 'spill_crate' });
@@ -546,6 +551,7 @@ export class ItemSystem {
     if (!this.loaded) return;
     dt = Math.min(dt, 0.05);
     this.boxes.update(dt);
+    if (this.pools.item_box && typeof this.pools.item_box.update === 'function') this.pools.item_box.update(dt);
     // roulette timers
     for (const [id, r] of this.roulette) {
       r.t -= dt;

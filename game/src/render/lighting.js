@@ -37,12 +37,12 @@
  *   rig.setFillOccluders([{ x, y, z, yaw, hw, hh, hd, strength }]);   optional, see FILL OCCLUDERS
  */
 import { CSM } from 'three/addons/csm/CSM.js';
-import { getTier } from './quality.js?v=r2-20260906125925';
+import { getTier } from './quality.js?v=r3-20260906150928';
 
 /** Sun placement, TRACK-PLAN section 1 and 9. */
 export const SUN_AZIMUTH_DEG = 250;
 export const SUN_ELEVATION_DEG = 14;
-export const SUN_COLOR = 0xffe2c0;     // r1 was 0xffc9a0: linear G/R 0.58 capped lit whitewash at luma 226 whatever the intensity (see the round 2 solve)
+export const SUN_COLOR = 0xffcd96;     // r1 0xffc9a0, r2 0xffe2c0 (a paler key so lit whitewash could pass 226 under a Lambert sun); round 3 warm again, the critic's (255, 205, 150): see the round 3 solve below
 /**
  * Solved in work/render/test.html against a whitewash 0xf1e6d2 wall facing the sun and a cobble
  * 0x9a8f80 ground plane half in shadow (work/render/NOTES.md holds the probe numbers): lit whitewash
@@ -91,14 +91,35 @@ export const SUN_COLOR = 0xffe2c0;     // r1 was 0xffc9a0: linear G/R 0.58 cappe
  * tops are sunlit things too. The fill (hemisphere 2.0, PMREM 0.4) stays where round 1 put it: shaded cobble
  * 85 to 110, the bar's blue grey mid tone, and B minus R about +35.
  */
-export const SUN_INTENSITY = 12.0;     // r1 was 3.2 (whitewash 205): round 2 solve, lit whitewash 240 to 250 under ACES, see the table above
-export const SKY_COLOR = 0x9fb6dc;      // hemisphere sky term (r0 0x8aa6dc): soft blue, the colour of shade on the road
-export const GROUND_COLOR = 0x5e6678;   // the ground a vertical face or an underside sees (r1 0x746e6a warm neutral): cool grey blue since round 2 so a shaded WALL is cooler than its lit face, not only the road (critic item 7); the bounce term below keeps its base warm
-export const SKY_INTENSITY = 2.0;       // r0 was 0.34: shaded cobble at luma 85 to 95, B minus R about +35
+/**
+ * ROUND 3 RE-SOLVE (fix3_render, critic item 2: "give the shade a second colour temperature: the shaded face of
+ * a whitewashed house is the same cream as the lit face only darker; the bar's shade is bluer by 30 to 40 units
+ * of B minus R"). Measured on the round 2 rig (work/fix3_render/base_*.png): a vertical whitewash face in shade
+ * summed to a NEUTRAL grey because three terms of about equal size cancelled: the hemisphere (blue), the PMREM
+ * diffuse (a vertical face sees the panorama's cream cloud ring and apricot horizon: warm) and the ground bounce
+ * (warm). The road in shade was blue (+35) because a flat face sees the panorama's zenith. So the fix is in the
+ * TERMS, not a tint: the PMREM keeps its full strength for specular (paint and sea reflections stay the real
+ * sky) but its DIFFUSE contribution is scaled by ENV_DIFFUSE; the hemisphere is the fill on walls, a cooler
+ * sky term over a dim cool ground term; the warm bounce goes mostly to UNDERSIDES (an awning soffit sees only
+ * the sunlit ground, a wall sees mostly shadowed ground beside it), so the soffit stays warm while the wall
+ * goes cool: two temperatures from the lights, and a tint could not do both. The sun goes back warm (the
+ * ACES fit in work/fix3_render puts lit whitewash at 241 to 245 with 0xffcd96 at 12 to 14, the round 2 note that
+ * a warm sun capped whitewash at 226 held for a Lambert sun under 10, not for this rig) so lit faces read B minus
+ * R negative against the blue shade. `?sunc=`, `?hemic=`, `?groundc=`, `?envd=`, `?bouncek=` are the A/B knobs.
+ */
+export const SUN_INTENSITY = 16.0;     // r1 was 3.2 (whitewash 205), r2 12.0; round 3 16 with the warmer key: lit whitewash 245 plus, kerb and paint tops 240 (the paving no longer follows, see the road knee in materials.js)
+export const SKY_COLOR = 0x8cb0ea;      // hemisphere sky term (r0 0x8aa6dc, r2 0x9fb6dc, round 3 cuts 0x9bb4de then 0xa8bada): a notch bluer than the critic's (150, 180, 230), because whitewash is warm (0xf1e6d2, linear B/R 0.74) and at (150, 180, 230) a shaded whitewash wall only reached B minus R +16 (work/fix3_render/pg_v1.png); at (140, 176, 234) with the ground term below it reads +29 to +43 (pr_h4, pt_i3)
+export const GROUND_COLOR = 0x5a74a8;   // the ground a vertical face or an underside sees through the hemisphere (r1 0x746e6a, r2 0x5e6678, round 3 first cut 0x3f4656 dim): a mid blue grey since the second cut, so a wall (half sky, half ground) is as blue as the road; undersides get the warm ground BOUNCE on top (BOUNCE_UNDER)
+export const SKY_INTENSITY = 2.4;       // r0 was 0.34, r2 2.0, round 3 2.8 then 2.4: with the brighter ground term and the flat bounce the shaded street sits at luma 85 to 95 (the bar's shaded road median is 77, range 36 to 147) without touching a lit face
 export const ENV_INTENSITY = 0.4;       // r0 was 0.10, r1 0.35: the PMREM of the cumulus panorama (sky/sky_pano_*.webp, round 1) carries cream cloud tops and the horizon glow, so it is less blue than the round 0 sky and can run higher
-/** Lit cobble and sand bounce onto vertical faces, linear irradiance. Warm, small: the sun is at 14 degrees so flat ground takes a quarter of the key. */
-export const BOUNCE_COLOR = [0.045, 0.030, 0.016];   // r1 0.030/0.020/0.011 under a 3.2 sun; the sun is 3.75x stronger now and this is 0.15 of the physical bounce: most ground beside a wall is in that wall's shadow, and the target shade is cool
-export const BOUNCE_UNDER = 0.25;
+/** Round 3: the PMREM's DIFFUSE share (its specular stays at ENV_INTENSITY). A vertical face sees the panorama's warm horizon band and cloud ring, which was the neutral ambient that greyed every shaded wall. */
+export const ENV_DIFFUSE = 0.03;        // the round 3 panorama's zenith is a deep ultramarine and its horizon band a wide apricot glow: as a diffuse term it over blued the flat road (S 0.46 at 0.3) and WARMED every wall (a side facing normal integrates the glow); nearly off, the hemisphere is the fill and the PMREM is the reflection
+/** Lit cobble and sand bounce, linear irradiance. Warm. Round 3: weighted to UNDERSIDES (BOUNCE_UNDER) and only a share of it on vertical faces (BOUNCE_SIDE), so soffits stay warm and walls go cool. */
+export const BOUNCE_COLOR = [0.13, 0.085, 0.045];   // r1 0.030/0.020/0.011 under a 3.2 sun, r2 0.045/0.030/0.016 on every vertical face
+export const BOUNCE_SIDE = 0.15;    // round 3 second cut: 0.3 warmed a shaded wall back to grey (work/fix3_render/pg_*.png)
+export const BOUNCE_UNDER = 8.0;    // an awning soffit or a balcony underside sees the sunlit ground: warm and bright (the critic: "the underside of an awning must stay warm"); it has to beat the blue ground term it also sees (0x5a74a8 x 2.4 is about 1.0 linear in B)
+/** Bounce from sunlit walls onto FLAT ground in shade: a shaded street between lit houses is blue grey, not blue (the near band's saturation must stay under 0.45). At 0.35 it did nothing against the hemisphere's 2.3 linear of blue on a flat face; 3.5 takes the shaded street from S 0.44 to 0.27 (work/fix3_render/pt_i3.png). */
+export const BOUNCE_FLAT = 3.5;
 export const FOG_COLOR = 0xf0dcc0;      // plain Fog colour for unpatched materials (sRGB): the horizon haze
 export const FOG_NEAR = 60;
 export const FOG_FAR = 520;
@@ -198,7 +219,9 @@ export function createAtmosUniforms(THREE, sunDir) {
     // the far headlands ring at 700 m is 80 percent sky
     uAerDensity: { value: 0.0021 },
     uAerLift: { value: 1.2 },
-    uAerStart: { value: 8.0 },
+    // round 3 (critic item 3, "remove the milky haze in the first 60 m"): the haze starts at 40 m (was 8), so the
+    // kart, the kerbs and the near houses carry their own colour; at 300 m the lighthouse keeps about 42 percent
+    uAerStart: { value: +(knob('aerstart') || 40.0) },
   };
 }
 let _shared = null;
@@ -290,11 +313,13 @@ function vrmPatch(shader) {
  */
 const BOUNCE_PARS_FS = /* glsl */`
 uniform vec3 uBounce;
-uniform float uBounceUnder;`;
+uniform float uBounceUnder;
+uniform float uBounceSide;
+uniform float uBounceFlat;`;
 const BOUNCE_FS = /* glsl */`
 {
   vec3 bN = normalize( ( vec4( geometryNormal, 0.0 ) * viewMatrix ).xyz );
-  float bW = smoothstep( 0.15, 0.6, 1.0 - abs( bN.y ) ) + clamp( -bN.y, 0.0, 1.0 ) * uBounceUnder;
+  float bW = smoothstep( 0.15, 0.6, 1.0 - abs( bN.y ) ) * uBounceSide + clamp( -bN.y, 0.0, 1.0 ) * uBounceUnder + smoothstep( 0.4, 0.9, bN.y ) * uBounceFlat;
   irradiance += uBounce * bW;
 }`;
 const _bounceUniforms = {};
@@ -302,7 +327,9 @@ function bounceUniforms(THREE) {
   if (!_bounceUniforms.uBounce) {
     const k = +(knob('bouncek') || 1);   // A/B scale for the solve
     _bounceUniforms.uBounce = { value: new THREE.Color(BOUNCE_COLOR[0] * k, BOUNCE_COLOR[1] * k, BOUNCE_COLOR[2] * k) };
-    _bounceUniforms.uBounceUnder = { value: BOUNCE_UNDER };
+    _bounceUniforms.uBounceUnder = { value: knob('bounceu') !== null ? +knob('bounceu') : BOUNCE_UNDER };
+    _bounceUniforms.uBounceSide = { value: knob('bounces') !== null ? +knob('bounces') : BOUNCE_SIDE };
+    _bounceUniforms.uBounceFlat = { value: knob('bouncef') !== null ? +knob('bouncef') : BOUNCE_FLAT };
   }
   return _bounceUniforms;
 }
@@ -315,24 +342,49 @@ function bounceUniforms(THREE) {
  * plain Lambert A/B.
  */
 export const SUN_WRAP = 0.65;
+/** Round 3: the shade toe on walls (see wrapPatch), in units of dotNL; `?toe=0` is the A/B. */
+export const SUN_TOE = 0.12;
 /** Cap on a material's own envMapIntensity (see setupMaterial): 0.8 x the rig's 0.4 fill is the 0.3 the kart paint was tuned to. */
 export const PAINT_ENV_CAP = 0.8;
 let envCapped = 0;
 const WRAP_PARS_FS = /* glsl */`
-uniform float uSunWrap;`;
-function wrapPatch(shader, THREE, uniforms) {
+uniform float uSunWrap;
+uniform float uSunToe;`;
+function wrapPatch(shader, THREE, uniforms, road = false) {
   Object.assign(shader.uniforms, uniforms);
   const chunk = THREE.ShaderChunk.lights_physical_pars_fragment;
   const line = 'vec3 irradiance = dotNL * directLight.color;';
   if (!chunk || !chunk.includes(line) || !shader.fragmentShader.includes('#include <lights_physical_pars_fragment>')) return false;
+  // round 3 (critic item 101): on the road ribbon only the STRIPES (paint lines, kerb substrate top, start chequer,
+  // lane lines) keep the wrap, as every other whitewash top in the scene does; the paving takes the plain Lambert
+  // sun so the flat cobble is not bleached. materials.js RoadMaterial declares and sets `roadStripeW` per fragment.
+  // round 3 (critic item 2): the wrap stays on TOPS only. On a vertical face it put a third of the key on a wall
+  // that was ten degrees short of the terminator (pow(0.17, 0.65) = 0.32), so a grazed whitewash wall summed the warm
+  // sun with the blue fill to a neutral grey (work/fix3_render/cur_5.png, the hairpin house: shade 117,112,114). Walls
+  // take the plain Lambert sun, so a face past the terminator sees only the fill and reads blue; tops (roofs, bonnets,
+  // kerb tops, awning tops) keep the wrap that round 2 solved for.
+  // And a TOE on walls (SUN_TOE): the terminator moves toward the sun by that much of dotNL, so a wall within about
+  // eight degrees of the terminator (dotNL under 0.12) already sees only the fill. With the sun at 16 against a fill
+  // of 2.8, a wall grazed at dotNL 0.04 took as much warm light from the sun as from the whole sky (the Lambert A/B
+  // work/fix3_render/s4_1.png read 141,138,146 on that face: still grey), and the bar's shade starts before the
+  // terminator, not at it. A face square to the sun is untouched (the toe rescales to 1 at dotNL 1).
+  const up = 'clamp( dot( geometryNormal, ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ), 0.0, 1.0 )';
+  const term = 'pow( dotNL, mix( 1.0, uSunWrap, roadStripeW ) )';   // the road ribbon: stripes wrapped, paving Lambert
+  const wallTerm = /* glsl */`
+	float sunUpW = smoothstep( 0.25, 0.75, ${up} );
+	float sunToe = uSunToe * ( 1.0 - sunUpW );
+	float sunNL = max( dotNL - sunToe, 0.0 ) / ( 1.0 - sunToe );
+	vec3 irradiance = pow( sunNL, mix( 1.0, uSunWrap, sunUpW ) ) * directLight.color;`;
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', '#include <common>' + WRAP_PARS_FS)
-    .replace('#include <lights_physical_pars_fragment>', chunk.replace(line, 'vec3 irradiance = pow( dotNL, uSunWrap ) * directLight.color;'));
+    .replace('#include <lights_physical_pars_fragment>', chunk.replace(line, road ? 'vec3 irradiance = ' + term + ' * directLight.color;' : wallTerm));
   return true;
 }
+/** True for the road material (materials.js RoadMaterial carries userData.road and declares roadStripeW in its shader). */
+function shaderDeclaresRoadStripe(m) { return !!(m.userData && m.userData.road); }
 let _wrapU = null;
 function wrapUniforms() {
-  if (!_wrapU) _wrapU = { uSunWrap: { value: knob('wrap') !== null ? +knob('wrap') : SUN_WRAP } };
+  if (!_wrapU) _wrapU = { uSunWrap: { value: knob('wrap') !== null ? +knob('wrap') : SUN_WRAP }, uSunToe: { value: knob('toe') !== null ? +knob('toe') : SUN_TOE } };
   return _wrapU;
 }
 function bouncePatch(shader, uniforms) {
@@ -370,6 +422,7 @@ const OCC_VS = /* glsl */`
 }`;
 const OCC_PARS_FS = /* glsl */`
 varying vec3 vOccW;
+uniform float uEnvDiffuse;         // round 3: the PMREM's diffuse share (ENV_DIFFUSE); its specular keeps scene.environmentIntensity
 uniform vec4 uOccBox[${OCC_N}];    // centre xyz, yaw
 uniform vec4 uOccHalf[${OCC_N}];   // half extents xyz, strength (0 = unused)
 float fillOcclusion() {
@@ -391,7 +444,7 @@ const OCC_FS = /* glsl */`
   float occF = fillOcclusion();
   #if defined( RE_IndirectDiffuse )
     irradiance *= occF;
-    iblIrradiance *= occF;
+    iblIrradiance *= occF * uEnvDiffuse;
   #endif
   #if defined( RE_IndirectSpecular )
     radiance *= occF;
@@ -401,6 +454,7 @@ let _occU = null;
 function occUniforms(THREE) {
   if (!_occU) {
     _occU = {
+      uEnvDiffuse: { value: knob('envd') !== null ? +knob('envd') : ENV_DIFFUSE },
       uOccBox: { value: Array.from({ length: OCC_N }, () => new THREE.Vector4(0, 0, 0, 0)) },
       uOccHalf: { value: Array.from({ length: OCC_N }, () => new THREE.Vector4(1, 1, 1, 0)) },
     };
@@ -419,7 +473,7 @@ function occPatch(shader, uniforms) {
 /** The default occluder: the rock tunnel, from the level plan and the road axis through it. */
 async function defaultOccluders(THREE) {
   try {
-    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r2-20260906125925'), import('../track/spline.js?v=r2-20260906125925')]);
+    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r3-20260906150928'), import('../track/spline.js?v=r3-20260906150928')]);
     const t = pl.LANDMARKS && pl.LANDMARKS.tunnel, spline = sp.SPLINE;
     if (!t || !spline || typeof spline.nearest !== 'function') return [];
     const n = spline.nearest(t.x, t.z);
@@ -623,7 +677,11 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
       if (m.envMapIntensity > cap) { m.envMapIntensity = cap; envCapped++; }
     }
     const bounce = lit && useBounce ? bounceUniforms(THREE) : null;
-    const wrap = lit && m.isMeshStandardMaterial && wrapUniforms().uSunWrap.value !== 1 ? wrapUniforms() : null;
+    // round 3 (critic item 101): the road ribbon's PAVING takes the plain Lambert sun (its stripes keep the wrap,
+    // see wrapPatch). The wrap was what bleached the flat cobble to luma 200 plus with the sun behind the camera
+    // (a flat face took 40 percent of a 12 sun); the road's own highlight rolloff is in materials.js RoadMaterial.
+    const isRoad = !!(m.userData && m.userData.road) && shaderDeclaresRoadStripe(m);
+    const wrap = lit && m.isMeshStandardMaterial && (wrapUniforms().uSunWrap.value !== 1 || wrapUniforms().uSunToe.value > 0) ? wrapUniforms() : null;
     const occ = lit && useOcc ? occU : null;
     const vrm = lit && !!m.isVertexPBR;
     const fade = m.userData && m.userData.__cullFade && knob('fade') !== '0' ? fadeU[m.userData.__cullFade] : null;
@@ -640,7 +698,7 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
       if (csmHook) csmHook.call(this, shader, r);
       if (vrm) vrmPatch(shader);
       if (bounce) bouncePatch(shader, bounce);
-      if (wrap) wrapPatch(shader, THREE, wrap);
+      if (wrap) wrapPatch(shader, THREE, wrap, isRoad && shader.fragmentShader.includes('float roadStripeW'));
       if (occ) occPatch(shader, occ);
       if (foggable) aerialPatch(shader, atm);
       if (fade) fadePatch(shader, fade);

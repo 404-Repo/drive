@@ -12,8 +12,9 @@
  *   above the horizon); vertical fov 58 plus 3 degrees at the speed cap and a further 4 on boost.
  *   The kart box (docs/CLAIMS.md kart mask) spans about 0.45 to 0.52 of the frame height at race
  *   pace and the kart reads at about 0.40 by eye (helmet top to tyre bottom).
- * Portrait (the phone) keeps more road in view: 3.9 m back (4.2 at vmax), 1.15 m up, fov 68 (at 3.4 m the
+ * Portrait (the phone) keeps more road in view: 4.4 m back (4.7 at vmax), 1.3 m up, fov 68 (at 3.4 m the
  *   kart filled 70 percent of the phone width and hid the road).
+ * Round 3: landscape 3.7 m back, 1.2 m up, look 7.2 m ahead at 0.6 m (see CAMERA below).
  *   Yaw follows the heading through a critically damped spring with a 0.18 s time constant and
  *   lags up to 12 degrees toward the outside during a drift; roll is 60% of the road bank; a
  *   sphere cast from the kart to the camera pulls it in when a wall is between; the camera never
@@ -33,11 +34,16 @@
  * shake on a spin out. Nothing here touches the body.
  */
 import * as THREE from 'three';
-import { KART } from './physics.js?v=r2-20260906125925';
+import { KART } from './physics.js?v=r3-20260906150928';
 
+// Round 3 (the blind critic: the round 2 camera overshot, the kart box at 0.50 of the frame height against a
+// 0.35 to 0.45 target, an AI kart ahead filling a third of the frame): a little higher and further back,
+// 3.5 m behind (3.8 at vmax), 1.2 m above the road, looking 7.2 m ahead at 0.6 m (rest pitch -3.2, horizon near
+// row 0.45, the helmet top at about 1.3 m sits just above it). Measured kart box: 3.7 m gave 0.33 to 0.35 at race
+// pace, 3.5 m the 0.35 to 0.42 the critic asked for (work/fix3_kart/p*.json).
 export const CAMERA = {
-  distance: 2.8, distanceFast: 3.1, height: 1.05, lookAhead: 6.5, lookHeight: 0.55,
-  portraitDistance: 3.9, portraitDistanceFast: 4.2, portraitHeight: 1.15,
+  distance: 3.5, distanceFast: 3.8, height: 1.2, lookAhead: 7.2, lookHeight: 0.6,
+  portraitDistance: 4.4, portraitDistanceFast: 4.7, portraitHeight: 1.3,
   fovLandscape: 58, fovPortrait: 68, fovSpeed: 3, fovBoost: 4,
   yawTau: 0.18, driftLagDeg: 12, bankRoll: 0.6, pitchFloorDeg: -20,
   castRadius: 0.4, heightTau: 0.12, fovTau: 0.25, pullFloor: 2.2, pullLift: 0.8,

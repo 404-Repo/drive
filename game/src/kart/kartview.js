@@ -49,20 +49,52 @@
  * worth of draws off every kart, 36 to 32 meshes); `hero: false` in the constructor bakes the
  * steering wheel into the chassis for an AI kart (two more). `?paint=0` is the A/B against the
  * matte baked kart.
+ *
+ * Round 3 (the blind critic: "a matte block toy ... flat red albedo with no gloss or sky reflection,
+ * black cylinder tyres with no tread or rim, two flat glowing headlight polygons, a featureless
+ * helmet blob"):
+ *   - The paint now REFLECTS THE SKY. three 0.169 overrides a material's envMapIntensity with
+ *     scene.environmentIntensity (the rig's 0.4 fill) whenever material.envMap is null, so the
+ *     round 1 and 2 clearcoat never had more sky than the plaster. PaintMaterial now takes the rig's
+ *     PMREM as its own envMap (adopted in update() once scene.environment exists) at PAINT_ENV, and
+ *     the shader scales the baked roughness by PAINT_ROUGH (0.35 in the asset reads as 0.25).
+ *     `?kenv=0.9` overrides PAINT_ENV for an A/B.
+ *   - CHROME and the VISOR ride in the same clearcoat bucket: an asset material tagged
+ *     `userData.finish = 'chrome' | 'visor'` keeps its own colour and its baked metalness 1 and
+ *     roughness (0.2 chrome, 0.06 visor) through the vertex bake, and swapPaint puts the mesh on the
+ *     PaintMaterial where vertex metalness 1 makes it a sky mirror. Zero extra draws per kart.
+ *   - The rear plate's race numeral: the chassis carries `numeral_1..8` holders; the racer's own
+ *     (id + 1) is kept and the rest are removed before the bake.
+ *   - `paint` is its own option (the ai agent's request): the clearcoat buckets are on for every
+ *     kart by default, `hero` only decides which joints stay articulated.
+ *   - Drift sparks are bigger, brighter (HDR, so the threshold bloom picks them up) and live long
+ *     enough to read in a still, with a hot glow at the sliding tyre's contact point by tier.
+ *   - Near cull follows the round 3 camera (3.7 m back): a kart under NEAR_CULL of the camera, or one
+ *     whose screen box covers more than NEAR_AREA of the frame, is hidden until it clears.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r2-20260906125925';
-import { KART } from './physics.js?v=r2-20260906125925';
-import { CHASE } from './camera.js?v=r2-20260906125925';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r3-20260906150928';
+import { KART } from './physics.js?v=r3-20260906150928';
+import { CHASE } from './camera.js?v=r3-20260906150928';
 
-const SPARK_COLOURS = [0x8fa9d6, 0x8fa9d6, 0xf07a2a, 0x7a4fc9];   // index by tier (0 unused)
+const SPARK_COLOURS = [0x9fc0ff, 0x9fc0ff, 0xffa040, 0xc48cff];   // index by tier (0 unused): sky blue, tangerine, violet, lifted toward white so they read in a still
+const GLOW_COLOURS = [0x6f95e0, 0x6f95e0, 0xf07a2a, 0x7a4fc9];    // the contact glow under the sliding tyre, the style lock tier colours
 const FLARE_COLOUR = 0xffc48a;
 const MAX_KARTS = 8;
-const SPARKS_PER_KART = 96;
-const FLARES_PER_KART = 14;
+const SPARKS_PER_KART = 128;
+const FLARES_PER_KART = 44;
 const FLARE_CORE = 0xffe2b0, FLARE_FRINGE = 0xf07a2a;
+const SPARK_HDR = 2.2;      // sparks are written above 1.0 so the post's threshold bloom haloes them
 const FAR_CULL = 220;   // metres, horizontal: an AI kart beyond this is not drawn (round 2, integrator)
-const NEAR_CULL = 2.0, NEAR_SHOW = 2.4;   // metres, horizontal, camera to kart centre: hide under the first, show again past the second (round 2 camera: 2.8 m back, 1.05 m up, frame bottom at -32 degrees, so a kart nearer than 2 m puts its wheels in the bottom 15 percent; the player's own kart sits at 2.8 m and a kart alongside it at 3.2 m or more)
+const NEAR_CULL = 2.4, NEAR_SHOW = 2.9;   // metres, horizontal, camera to kart centre: hide under the first, show again past the second (round 3 camera: 3.7 m back, 1.2 m up, fov 58; a kart at 2.4 m spans about 0.6 of the frame height, one alongside the player sits at 3.7 m or more)
+const NEAR_AREA = 0.22, NEAR_AREA_SHOW = 0.16;   // fraction of the frame a non player kart's screen box may cover before it is hidden (critic round 3: nothing but the player over 20 percent)
+// the hero paint: the rig's PMREM as the paint's own envMap so envMapIntensity is honoured (three 0.169 overrides
+// it with scene.environmentIntensity, the 0.4 fill, when material.envMap is null), and a roughness scale on the
+// baked value so the style lock's 0.35 body paint reads as the critic's 0.25 under the clearcoat
+const PAINT_IOR = (() => { try { const q = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("kior"); const v = q === null ? NaN : parseFloat(q); return Number.isFinite(v) ? v : 2.0; } catch (e) { return 2.0; } })();   // ?kior= A/B (integrator, round 3)
+const PAINT_ENV = (() => { try { const q = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("kenv"); const v = q === null ? NaN : parseFloat(q); return Number.isFinite(v) ? v : 0.85; } catch (e) { return 0.85; } })();
+const PAINT_ROUGH = 0.72;
+const PAINT_METAL_FLOOR = 0.25;
 
 /**
  * The clearcoat paint: colour, roughness and metalness come from the vertices the render module's
@@ -79,9 +111,14 @@ class PaintMaterial extends THREE.MeshPhysicalMaterial {
     this.roughness = 1;
     this.metalness = 1;
     this.clearcoat = 1.0;
-    this.clearcoatRoughness = 0.12;
-    this.envMapIntensity = 1.0;     // round 2: the rig runs scene.environmentIntensity at 0.40 (was 0.1 when this was 3.0); 3.0 made the red kart a salmon sky mirror
+    this.clearcoatRoughness = 0.08;
+    // honoured only once envMap is set (KartView.update adopts scene.environment); the rig caps values above 1
+    this.envMapIntensity = PAINT_ENV;
     this.specularIntensity = 1.0;
+    // a high index of refraction lifts the base layer's F0 from 0.04 to about 0.15 (three's clearcoat F0 is a fixed
+    // 0.04): the sky lands on the bodywork as a visible band and the sun's highlight is four times brighter.
+    // Measured: at ior 1.5 the 0.85 and 1.5 env levels were indistinguishable in a frame (work/fix3_kart/env_sheet.png)
+    this.ior = PAINT_IOR;
     this.name = 'kart_paint';
   }
   onBeforeCompile(shader) {
@@ -90,10 +127,18 @@ class PaintMaterial extends THREE.MeshPhysicalMaterial {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vRM;')
-      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp( vRM.x, 0.04, 1.0 );')
-      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp( vRM.x * ' + PAINT_ROUGH.toFixed(3) + ', 0.04, 1.0 );')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = max( vRM.y, ' + PAINT_METAL_FLOOR.toFixed(2) + ' );');   // a metallic flake floor on the paint; chrome and the visor carry 1.0 in the vertices
   }
   customProgramCacheKey() { return 'drive_paint'; }
+}
+/** Give every shared paint material the scene's PMREM as its own envMap (once, when it exists). */
+function adoptEnvironment(scene) {
+  const env = scene && scene.environment;
+  if (!env) return;
+  for (const m of PAINT.values()) {
+    if (m.envMap !== env) { m.envMap = env; m.needsUpdate = true; }
+  }
 }
 const PAINT = new Map();   // side|transparent -> shared PaintMaterial
 function paintFor(src) {
@@ -123,7 +168,7 @@ function swapPaint(root) {
     if (g && g.attributes && g.attributes.color && g.attributes.aRM) { o.material = paintFor(o.material); n++; return; }
     const src = o.material;
     if (src && src.isMeshStandardMaterial && !src.isVertexPBR) {
-      const m = new THREE.MeshPhysicalMaterial({ color: src.color.clone(), roughness: src.roughness, metalness: src.metalness, side: src.side, clearcoat: 1.0, clearcoatRoughness: 0.12, envMapIntensity: 1.0 });
+      const m = new THREE.MeshPhysicalMaterial({ color: src.color.clone(), roughness: src.roughness * PAINT_ROUGH, metalness: src.metalness, side: src.side, clearcoat: 1.0, clearcoatRoughness: 0.08, envMapIntensity: PAINT_ENV });
       m.name = 'kart_paint'; o.material = m; n++;
     }
   });
@@ -138,7 +183,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r2-20260906125925');
+      const m = await import('../render/materials.js?v=r3-20260906150928');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;
@@ -195,6 +240,8 @@ function applyLivery(root, pick) {
   return touched;
 }
 const paint = (hex) => ({ hex, paint: true });
+/** A chrome or visor part keeps its own colour and rides in the clearcoat bucket (vertex metalness 1 makes it a mirror). */
+const finishOf = (m) => (m && m.userData && (m.userData.finish === 'chrome' || m.userData.finish === 'visor') && m.color ? paint(m.color.getHex()) : null);
 
 /** Saturation of a material colour in 0..1, for the livery fallback. */
 function saturationOf(m) {
@@ -285,7 +332,9 @@ class EffectsPool {
     const cone = new THREE.ConeGeometry(0.11, 1, 12, 1, true);
     cone.translate(0, 0.5, 0);
     cone.rotateX(-Math.PI / 2);                     // base at the origin, tip along -Z (backward)
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    // round 3: the cones were the "two flat glowing headlight polygons" the blind critic saw on a boosting kart
+    // from behind (motion frames 4 and 6). They are now a faint core only; the flame is the sprite stream
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
     this.cones = new THREE.InstancedMesh(cone, coneMat, MAX_KARTS * 4);
     this.cones.frustumCulled = false; this.cones.castShadow = false; this.cones.receiveShadow = false;
     this.cones.name = 'kart_boost_cones';
@@ -336,7 +385,7 @@ class EffectsPool {
     if (this.owner === view) this.update(dt);
   }
   allocate() { if (this.slots >= MAX_KARTS) { console.warn('[kartview] more than ' + MAX_KARTS + ' karts: effects pool full, extra karts get no sparks'); return -1; } return this.slots++; }
-  spawn(kind, slot, x, y, z, vx, vy, vz, life, size, hex) {
+  spawn(kind, slot, x, y, z, vx, vy, vz, life, size, hex, hdr = 1) {
     if (slot < 0) return;
     // never let a non finite value into the pool: a NaN in any attribute renders as an opaque black square
     // (integrator, round 1); warn once with the values so the source can be traced
@@ -363,7 +412,8 @@ class EffectsPool {
     st[o] = x; st[o + 1] = y; st[o + 2] = z; st[o + 3] = vx; st[o + 4] = vy; st[o + 5] = vz; st[o + 6] = age; st[o + 7] = life;
     const c = this._tmpC.setHex(hex);
     const ca = pts.geometry.attributes.color.array, sa = pts.geometry.attributes.size.array;
-    ca[idx * 3] = c.r; ca[idx * 3 + 1] = c.g; ca[idx * 3 + 2] = c.b;
+    const hb = Number.isFinite(hdr) && hdr > 0 ? hdr : 1;
+    ca[idx * 3] = c.r * hb; ca[idx * 3 + 1] = c.g * hb; ca[idx * 3 + 2] = c.b * hb;
     sa[idx] = size;
   }
   setCone(slot, which, worldMatrix, len, rad) {
@@ -435,10 +485,12 @@ const _lx = new THREE.Vector3();
 const _euler = new THREE.Euler();
 
 export class KartView {
-  constructor({ scene, livery = {}, id = 0, assetBase = './assets/', hero = true } = {}) {
+  constructor({ scene, livery = {}, id = 0, assetBase = './assets/', hero = true, paint = true, numeral = null } = {}) {
     this.scene = scene;
     this.id = id;
     this.hero = !!hero;                          // false: the steering wheel bakes into the chassis (two draws fewer per AI kart)
+    this.paint = paint == null ? true : !!paint; // the clearcoat buckets (body, caps, stripes, chrome, visor): on for every kart unless the integrator says otherwise
+    this.numeral = numeral == null ? ((id % 8) + 8) % 8 + 1 : numeral;   // the race number on the rear plate, 1 to 8
     this.livery = {
       body: livery.body == null ? 0xed5851 : livery.body,
       suit: livery.suit == null ? 0xf1e6d2 : livery.suit,
@@ -493,16 +545,25 @@ export class KartView {
       const cud = chassis.userData || {};
       const cBody = parseRef(cud.livery), cLight = parseRef(cud.liveryLight), cDark = parseRef(cud.liveryDark);
       const body = this.livery.body, bodyL = tintHex(body, 0.11, 0.95), bodyD = tintHex(body, -0.18, 0.92);
+      const P = this.paint ? paint : (hex) => hex;
       let n = applyLivery(chassis, (m) => {
-        if (m.userData && m.userData.livery === true) return paint(body);
-        if (matchesRef(m, cBody)) return paint(body);
-        if (matchesRef(m, cLight)) return paint(bodyL);
-        if (matchesRef(m, cDark)) return paint(bodyD);
-        return null;
+        if (m.userData && m.userData.livery === true) return P(body);
+        if (matchesRef(m, cBody)) return P(body);
+        if (matchesRef(m, cLight)) return P(bodyL);
+        if (matchesRef(m, cDark)) return P(bodyD);
+        return this.paint ? finishOf(m) : null;
       });
       if (!n) {
-        n = applyLivery(chassis, (m) => (m.name === 'metal' && saturationOf(m) > 0.3 ? paint(body) : null));
+        n = applyLivery(chassis, (m) => (m.name === 'metal' && saturationOf(m) > 0.3 ? P(body) : null));
         console.warn('[kartview] kart_chassis declares no livery (material.userData.livery or userData.livery \'metal:hex\'); recoloured ' + n + ' saturated metal parts instead');
+      }
+      // the rear plate's race number: keep this racer's numeral holder, drop the other seven before the bake
+      {
+        const holders = [];
+        chassis.traverse((o) => { if (o.userData && typeof o.userData.numeral === 'number') holders.push(o); });
+        let kept = 0;
+        for (const h of holders) { if (h.userData.numeral === this.numeral) { h.visible = true; kept++; } else h.removeFromParent(); }
+        if (holders.length && !kept) console.warn('[kartview] kart_chassis has no numeral_' + this.numeral + ' holder; the plate stays blank');
       }
       apply(chassis, 'kart_chassis');
       swapPaint(chassis);
@@ -521,9 +582,12 @@ export class KartView {
       if (!(steer && steer.isObject3D)) console.warn('[kartview] kart_chassis has no joints.steer; the steering wheel stays fixed');
       // exhaust flare frames: position from the socket, pointing back and 20 degrees up (the
       // socket node's own axes are the author's and cannot be trusted to point along the pipe)
+      // round 3: the pipes exit outward (userData.exhaustDir), so the flame yaws 20 degrees to its side as well
+      const outward = chassis.userData.exhaustDir === 'outward' ? 0.35 : 0;
       for (const [i, k] of ['exhaustL', 'exhaustR'].entries()) {
         const s = this.sockets[k];
-        this._exhaustM[i].makeRotationX(0.35).setPosition(s.x, s.y, s.z);
+        _euler.set(0.35, -Math.sign(s.x || (i === 0 ? 1 : -1)) * outward, 0, 'YXZ');   // the cone tip is -Z; a negative yaw swings it toward +X (the kart's left)
+        this._exhaustM[i].makeRotationFromEuler(_euler).setPosition(s.x, s.y, s.z);
       }
       bakeArticulated(chassis, joints);
       // the chassis silhouette is its metal and paint buckets; the small ones (bumper rubber trims, exhaust
@@ -556,7 +620,7 @@ export class KartView {
         continue;
       }
       const wRef = parseRef((w.userData || {}).livery);
-      let n = applyLivery(w, (m) => ((m.userData && m.userData.livery === true) || matchesRef(m, wRef) ? (this.hero ? paint(this.livery.body) : this.livery.body) : null));   // round 2: an AI cap keeps the livery colour in the metal set (no clearcoat bucket: 3 draws a kart)
+      let n = applyLivery(w, (m) => ((m.userData && m.userData.livery === true) || matchesRef(m, wRef) ? (this.paint ? paint(this.livery.body) : this.livery.body) : (this.paint ? finishOf(m) : null)));   // round 3: the cap and the chrome hub share the clearcoat bucket on every kart (one draw a wheel group)
       if (!n && i === 0) console.warn('[kartview] kart_wheel declares no livery cap (material.userData.livery or userData.livery \'metal:hex\')');
       apply(w, 'kart_wheel');
       swapPaint(w);
@@ -613,17 +677,18 @@ export class KartView {
       const dud = driver.userData || {};
       const dSuit = parseRef(dud.livery), dAccent = parseRef(dud.suitAccent), dHelmet = parseRef(dud.helmet);
       const suitD = tintHex(L.suit, -0.13, 0.95);
+      const P = this.paint ? paint : (hex) => hex;
       let n = applyLivery(driver, (m) => {
         const l = m.userData && m.userData.livery;
         if (l === 'suit') return L.suit;
-        if (l === 'helmet') return paint(L.helmet);
-        if (l === 'stripe') return this.hero ? paint(L.stripe) : L.stripe;   // round 2: AI stripes stay in the metal set (one draw a kart)
+        if (l === 'helmet') return P(L.helmet);
+        if (l === 'stripe') return P(L.stripe);
         if (matchesRef(m, dSuit)) return L.suit;
         if (matchesRef(m, dAccent)) return L.helmet;                 // the second suit tone is the racer's colour
-        if (matchesRef(m, dHelmet)) return paint(L.helmet);
+        if (matchesRef(m, dHelmet)) return P(L.helmet);
         if (dSuit && m.name === dSuit.name && isDarkerToneOf(m, dSuit.hex)) return suitD;   // the suit's shade tone
-        if (dHelmet && m.name === dHelmet.name && !matchesRef(m, dHelmet) && lumOf(m) > 0.45) return this.hero ? paint(L.stripe) : L.stripe;   // the helmet stripe: the light metal that is not the helmet
-        return null;
+        if (dHelmet && m.name === dHelmet.name && !matchesRef(m, dHelmet) && lumOf(m) > 0.45) return P(L.stripe);   // the helmet stripe: the light metal that is not the helmet
+        return this.paint ? finishOf(m) : null;                      // the visor mirror and the chrome visor pivots
       });
       if (!n) console.warn('[kartview] driver_racer declares no livery (material.userData.livery or userData.livery/suitAccent/helmet \'recipe:hex\'); driver keeps its own colours');
       apply(driver, 'driver_racer');
@@ -699,16 +764,24 @@ export class KartView {
     if (body.state === 'fall') { _q.setFromAxisAngle(_xAxis, Math.min(0.9, body.respawnT * 1.5)); o.quaternion.multiply(_q); }
     let visible = !(body.state === 'respawn' && body.fadeAlpha >= 1 && body.respawnPhase === 'fade');
     // near camera cull: a kart sitting on the chase camera (an AI right behind the player) would push
-    // its helmet through the bottom of the frame; the followed kart is never culled
+    // its helmet through the bottom of the frame; the followed kart is never culled. Round 3: also by
+    // screen area, so no kart but the player's ever covers more than a fifth of the frame
     if (CHASE.active && CHASE.bodyId !== body.id && CHASE.bodyId !== this.id) {
       const dx = o.position.x - CHASE.position.x, dz = o.position.z - CHASE.position.z;
       const d = Math.hypot(dx, dz);
       if (d < NEAR_CULL) this._nearCulled = true;
       else if (d > NEAR_SHOW) this._nearCulled = false;
-      if (this._nearCulled) visible = false;
+      if (d < 9 && CHASE.camera) {
+        const sb = this.screenBox(CHASE.camera);
+        const area = sb ? sb.nw * sb.nh : 0;
+        if (area > NEAR_AREA) this._areaCulled = true;
+        else if (area < NEAR_AREA_SHOW) this._areaCulled = false;
+      } else this._areaCulled = false;
+      if (this._nearCulled || this._areaCulled) visible = false;
       if (d > FAR_CULL) visible = false;   // round 2 (integrator): a kart 220 m off is 4 px wide and cost 7k triangles (all 7 at the grid seen from the hairpin exit)
-    } else this._nearCulled = false;
+    } else { this._nearCulled = false; this._areaCulled = false; }
     o.visible = visible;
+    adoptEnvironment(this.scene);
 
     // hop squash: stretch on take off, squash on landing, spring back
     const vy = body.vy || 0;
@@ -780,9 +853,10 @@ export class KartView {
     // drift sparks from the rear wheels' contact points
     const tier = body.drift && body.drift.active ? body.drift.tier : 0;
     if (tier > 0 && body.grounded) {
-      // a low dense stream off both rear tyres, left behind on the road for about two metres
-      // (at 24 m/s a 0.1 s life is 2.4 m of trail; the kart's own motion draws the streak)
-      this._sparkAcc += dt * (240 + 80 * tier);
+      // a dense stream off both rear tyres, left behind on the road for two to four metres (at 24 m/s a
+      // 0.2 s life is 5 m of trail; the kart's own motion draws the streak). Round 3: bigger, longer
+      // lived and written above 1.0 so a single frame shows a spray, not a few dots
+      this._sparkAcc += dt * (320 + 110 * tier);
       const colour = SPARK_COLOURS[tier];
       let k = 0;
       while (this._sparkAcc >= 1) {
@@ -792,13 +866,20 @@ export class KartView {
         _v.copy(w.at); _v.y = 0.03; o.localToWorld(_v);
         // thrown backward, a little outward toward the drift's outside, barely off the ground
         _v2.set(Math.sin(body.heading), 0, Math.cos(body.heading));
-        const back = -(1.5 + Math.random() * 2.5), side = (Math.random() - 0.5) * 1.2 - body.drift.dir * (0.4 + Math.random() * 0.8);
+        const back = -(2.0 + Math.random() * 3.5), side = (Math.random() - 0.5) * 1.6 - body.drift.dir * (0.6 + Math.random() * 1.2);
         const rx = -Math.cos(body.heading), rz = Math.sin(body.heading);
-        const big = Math.random() < 0.3;
+        const big = Math.random() < 0.35;
         const sub = dt * Math.random();                  // where along this frame's travel the spark left the tyre
-        P.spawn('spark', this.slot, _v.x - body.vel.x * sub + (Math.random() - 0.5) * 0.14, _v.y + Math.random() * 0.05, _v.z - body.vel.z * sub + (Math.random() - 0.5) * 0.14,
-          _v2.x * back + rx * side, 0.3 + Math.random() * 1.4, _v2.z * back + rz * side,
-          0.07 + Math.random() * 0.13, (big ? 0.17 : 0.09) + 0.02 * tier + Math.random() * 0.04, colour);
+        P.spawn('spark', this.slot, _v.x - body.vel.x * sub + (Math.random() - 0.5) * 0.18, _v.y + Math.random() * 0.08, _v.z - body.vel.z * sub + (Math.random() - 0.5) * 0.18,
+          _v2.x * back + rx * side, 0.6 + Math.random() * 2.2, _v2.z * back + rz * side,
+          0.12 + Math.random() * 0.2, (big ? 0.21 : 0.12) + 0.025 * tier + Math.random() * 0.04, colour, SPARK_HDR);
+      }
+      // the hot spot: a soft glow at each rear tyre's contact point in the tier colour, one frame's life,
+      // so the sliding tyre reads lit from any distance
+      for (let i = 2; i < 4; i++) {
+        const w = this.wheels[i]; if (!w) continue;
+        _v.copy(w.at); _v.y = 0.06; o.localToWorld(_v);
+        P.spawn('flare', this.slot, _v.x, _v.y, _v.z, body.vel.x * 0.9, 0, body.vel.z * 0.9, 0.05, 0.55 + 0.1 * tier, GLOW_COLOURS[tier], 1.6);
       }
     }
     // boost: exhaust flare sprites and the two cones
@@ -807,21 +888,22 @@ export class KartView {
     const vis = this._boostVis;
     for (let i = 0; i < 2; i++) {
       _m4.multiplyMatrices(this.bodyGroup.matrixWorld, this._exhaustM[i]);
-      const len = vis > 0.02 ? (0.7 + 0.4 * vis + 0.16 * Math.sin(this._t * 37 + i * 2) + 0.06 * Math.sin(this._t * 61 + i)) * vis : 0;
-      P.setCone(this.slot, i, _m4, len, 0.85 + 0.35 * vis + 0.08 * Math.sin(this._t * 47 + i * 3));
+      const len = vis > 0.02 ? (0.45 + 0.3 * vis + 0.12 * Math.sin(this._t * 37 + i * 2) + 0.05 * Math.sin(this._t * 61 + i)) * vis : 0;
+      P.setCone(this.slot, i, _m4, len, 0.45 + 0.2 * vis + 0.05 * Math.sin(this._t * 47 + i * 3));
       if (vis > 0.05) {
-        // a few flame licks off the tip of each cone: orange, small, short lived, carried with the kart
-        this._flareAcc += dt * 14 * vis;
+        // the flame proper: a dense stream of soft licks off each pipe, pale core near the tip and tangerine
+        // fringe further back, written above 1.0 so the bloom haloes the jet
+        this._flareAcc += dt * 90 * vis;
         while (this._flareAcc >= 1) {
           this._flareAcc -= 1;
           _v.setFromMatrixPosition(_m4);
           _v2.set(Math.sin(body.heading), 0, Math.cos(body.heading));
           const k = Math.random();
-          const along = 0.4 + k * 0.7;
-          const colour = k < 0.3 ? FLARE_COLOUR : FLARE_FRINGE;
-          P.spawn('flare', this.slot, _v.x - _v2.x * along - body.vel.x * dt * Math.random() + (Math.random() - 0.5) * 0.08, _v.y + 0.06 * k + (Math.random() - 0.5) * 0.08, _v.z - _v2.z * along - body.vel.z * dt * Math.random() + (Math.random() - 0.5) * 0.08,
-            body.vel.x * 0.8 - _v2.x * (1.5 + Math.random() * 2), 0.4 + Math.random() * 0.9, body.vel.z * 0.8 - _v2.z * (1.5 + Math.random() * 2),
-            0.08 + Math.random() * 0.1, 0.14 + 0.1 * Math.random(), colour);
+          const along = 0.15 + k * 0.9;
+          const colour = k < 0.35 ? FLARE_COLOUR : FLARE_FRINGE;
+          P.spawn('flare', this.slot, _v.x - _v2.x * along - body.vel.x * dt * Math.random() + (Math.random() - 0.5) * 0.1, _v.y + 0.08 * k + (Math.random() - 0.5) * 0.1, _v.z - _v2.z * along - body.vel.z * dt * Math.random() + (Math.random() - 0.5) * 0.1,
+            body.vel.x * 0.85 - _v2.x * (1.5 + Math.random() * 2.5), 0.3 + Math.random() * 1.0, body.vel.z * 0.85 - _v2.z * (1.5 + Math.random() * 2.5),
+            0.14 + Math.random() * 0.14, (k < 0.35 ? 0.2 : 0.28) + 0.14 * Math.random(), colour, k < 0.35 ? 2.0 : 1.4);
         }
       }
     }
