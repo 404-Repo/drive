@@ -2,6 +2,11 @@
 // across the width; pods are rounded rectangles extruded along the length; the bumper
 // and exhausts are TubeGeometry along curves; headrest and hub cup are Lathes. Up
 // facing triangles of each sweep are split off into the bleached tint.
+// Round 1 (hero detail, the chase camera now sits 4.3 m behind): a low rear wing on two
+// struts behind the headrest (livery, bleached top, dark end plates, painted edges), fatter
+// exhausts with heat rings and glowing tips, a rear number disc on the cowl, a fatter rear
+// bumper with livery corner caps, and a livery tail band under the cowl. Height stays under
+// the 0.62 m spec plus tolerance (wing end plates top out at 0.65 m).
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -186,17 +191,40 @@ export default function (THREE) {
   for (const sx of [-1, 1]) {
     const pts = [new THREE.Vector3(sx * 0.10, 0.24, -0.70), new THREE.Vector3(sx * 0.15, 0.27, -0.80), new THREE.Vector3(sx * 0.19, 0.36, -0.88)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    mesh(g, new THREE.TubeGeometry(curve, 8, 0.03, 10, false), dark);
+    mesh(g, new THREE.TubeGeometry(curve, 8, 0.042, 12, false), dark);
     const tan = curve.getTangent(1); const end = pts[2];
-    const tip = mesh(g, cyl(0.022, 0.022, 0.012, 12), flare, end.x, end.y, end.z); tip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan);
-    const ring = mesh(g, cyl(0.034, 0.034, 0.02, 12), darkL, end.x, end.y, end.z); ring.quaternion.copy(tip.quaternion);
+    const tip = mesh(g, cyl(0.03, 0.03, 0.014, 14), flare, end.x, end.y, end.z); tip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan);
+    const ring = mesh(g, cyl(0.05, 0.05, 0.026, 14), darkL, end.x, end.y, end.z); ring.quaternion.copy(tip.quaternion);
+    // a heat ring half way along the pipe, lighter metal
+    const mid = curve.getPoint(0.55), midT = curve.getTangent(0.55);
+    const hr = mesh(g, cyl(0.05, 0.05, 0.02, 14), darkL, mid.x, mid.y, mid.z); hr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), midT);
   }
-  // rear bumper
-  tube(g, [-0.46, 0.12, -0.80], [0.46, 0.12, -0.80], 0.025, rubber, 10);
+  // rear number disc on the cowl's back face
+  mesh(g, cyl(0.10, 0.10, 0.012, 20), dark, 0, 0.245, -0.805, PI / 2);
+  mesh(g, cyl(0.085, 0.085, 0.016, 20), cream, 0, 0.245, -0.81, PI / 2);
+  mesh(g, cyl(0.03, 0.03, 0.01, 12), liv, 0, 0.245, -0.822, PI / 2);
+  // rear wing: two raked struts off the cowl, a 1.0 m blade with a bleached top, painted edge tubes, dark end plates
+  const wingY = 0.565, wingZ = -0.72;
+  for (const sx of [-1, 1]) tube(g, [sx * 0.22, 0.34, -0.64], [sx * 0.22, wingY - 0.01, wingZ + 0.03], 0.02, dark, 10);
+  const wingProfile = new THREE.Shape();   // (z, y) side profile of the blade: a thin aerofoil, thicker at the front
+  wingProfile.moveTo(wingZ + 0.13, wingY - 0.012); wingProfile.quadraticCurveTo(wingZ + 0.14, wingY + 0.02, wingZ + 0.10, wingY + 0.03);
+  wingProfile.lineTo(wingZ - 0.10, wingY + 0.008); wingProfile.quadraticCurveTo(wingZ - 0.13, wingY + 0.004, wingZ - 0.13, wingY - 0.008);
+  wingProfile.lineTo(wingZ + 0.13, wingY - 0.012); wingProfile.closePath();
+  sweepXTwoTone(wingProfile, 1.00, 0, liv, livL);
   for (const sx of [-1, 1]) {
-    tube(g, [sx * 0.46, 0.12, -0.80], [sx * 0.46, 0.12, -0.70], 0.025, rubber, 10);
-    mesh(g, new THREE.SphereGeometry(0.025, 8, 6), rubber, sx * 0.46, 0.12, -0.80);
-    tube(g, [sx * 0.29, 0.085, -0.75], [sx * 0.29, 0.12, -0.80], 0.016, dark, 8);
+    mesh(g, box(0.024, 0.13, 0.28), dark, sx * 0.51, wingY + 0.04, wingZ);
+    mesh(g, box(0.026, 0.012, 0.29), darkL, sx * 0.51, wingY + 0.105, wingZ);
+  }
+  tube(g, [-0.50, wingY + 0.03, wingZ + 0.10], [0.50, wingY + 0.03, wingZ + 0.10], 0.012, livL, 8);
+  tube(g, [-0.50, wingY + 0.008, wingZ - 0.11], [0.50, wingY + 0.008, wingZ - 0.11], 0.012, livL, 8);
+  // livery tail band under the cowl, between the rear bumper and the engine
+  mesh(g, box(0.62, 0.05, 0.03), livD, 0, 0.085, -0.79);
+  // rear bumper: a fat rubber bar with livery corner caps
+  tube(g, [-0.46, 0.13, -0.81], [0.46, 0.13, -0.81], 0.036, rubber, 12);
+  for (const sx of [-1, 1]) {
+    tube(g, [sx * 0.46, 0.13, -0.81], [sx * 0.46, 0.13, -0.70], 0.036, rubber, 12);
+    mesh(g, new THREE.SphereGeometry(0.048, 12, 8), liv, sx * 0.46, 0.13, -0.81);
+    tube(g, [sx * 0.29, 0.085, -0.75], [sx * 0.29, 0.13, -0.81], 0.018, dark, 8);
   }
 
   const sock = (name, x, y, z) => { const s = new THREE.Group(); s.name = 'socket_' + name; s.position.set(x, y, z); g.add(s); return s; };

@@ -12,10 +12,11 @@
  *     texels), 1024 over 45 m on the phone. Contact shadow under a kart is this shadow map and the
  *     low sun; no blob, no decal, no baked AO.
  *  2. COOL FILL. scene.environment is the PMREM of the Atlas sky panorama (sky.js builds it and
- *     leaves it in scene.userData.skyEnv) at LOW intensity, plus a matching HemisphereLight (sky
- *     0x8fa9d6 over a warm cobble shade ground). Without the panorama (?sky=0, or a load failure)
- *     an analytic environment of the ATMOS palette takes its place. Shade on cobble lands at 0.38
- *     to 0.48 of lit cobble in sRGB luma and cooler than it (B minus R positive).
+ *     leaves it in scene.userData.skyEnv), plus a matching HemisphereLight (soft blue sky over a warm
+ *     neutral ground). Without the panorama (?sky=0, or a load failure) an analytic environment of
+ *     the ATMOS palette takes its place. Since round 1 the fill is MOST of the light on a shaded
+ *     face: a fully shaded road lands at sRGB luma 80 to 120 and cooler than lit (B minus R +20 or
+ *     more), the bar's blue grey mid tone, never the near black of round 0 (see the solve table below).
  *  3. GROUND BOUNCE. A warm lit ground term added to the irradiance on vertical faces only (a wall
  *     in shade sees half a hemisphere of sunlit cobble and sand; an underside sees its own shadow).
  *  4. AERIAL PERSPECTIVE, not flat fog. Every material's fog chunk is replaced so the haze colour
@@ -33,9 +34,10 @@
  *   rig.update(camera);   per frame, after everything moved and before post.render()
  *   rig.refresh();        after the level build, after karts load: patches new materials
  *   rig.patchFog(mat);    the sea and any custom ShaderMaterial that carries three's fog chunks
+ *   rig.setFillOccluders([{ x, y, z, yaw, hw, hh, hd, strength }]);   optional, see FILL OCCLUDERS
  */
 import { CSM } from 'three/addons/csm/CSM.js';
-import { getTier } from './quality.js?v=r0-20260906043348';
+import { getTier } from './quality.js?v=r1-20260906113009';
 
 /** Sun placement, TRACK-PLAN section 1 and 9. */
 export const SUN_AZIMUTH_DEG = 250;
@@ -46,11 +48,31 @@ export const SUN_COLOR = 0xffc9a0;
  * 0x9a8f80 ground plane half in shadow (work/render/NOTES.md holds the probe numbers): lit whitewash
  * at sRGB luma 200 to 225, shade on cobble at 0.38 to 0.48 of lit cobble.
  */
-export const SUN_INTENSITY = 4.2;      // work/render/NOTES.md: lit whitewash 215, shade/lit cobble 0.44 with the fill below and EXPOSURE 0.96
-export const SKY_COLOR = 0x8aa6dc;      // hemisphere sky term: the style lock's sky fill, a notch more saturated so shade reads cool
-export const GROUND_COLOR = 0x5c5e66;   // the ground an underside sees: cobble in its own shadow, cool neutral
-export const SKY_INTENSITY = 0.34;      // solved with the panorama B sky: 0.20 put shade on cobble at 0.35 of lit, 0.34 plus ENV 0.10 lands 0.44 (target 0.38 to 0.48)
-export const ENV_INTENSITY = 0.10;      // scene.environmentIntensity on the panorama PMREM: the sky as a LIGHT is far dimmer than the sky as a picture; panorama B is blue above 15 degrees so this term is cool and directional
+/**
+ * ROUND 1 RE-SOLVE (fix1_render, the critic's deciding property: "everything in shade crushes to near
+ * black while whitewash clips to white; the bar's shade is a blue grey mid tone"). The round 0 solve
+ * targeted shade at 0.38 to 0.48 of lit cobble, which under a 14 degree sun put a fully shaded road at
+ * sRGB luma 15 to 20 (work/fix1_render/sw2_S0_p0.22.png, luma grid). Measured in the real frame at
+ * progress 0.22 (lower street, road in the shadow of the house row) with tools/shot.mjs and
+ * work/fix1_render/shade.py, the bar's own shaded road patches sitting at luma 36 to 147, median 77:
+ *
+ *   hemi  env   sun  sky/ground colour      shaded cobble luma / B-R   sunlit plaster
+ *   0.34  0.10  4.2  8aa6dc / 5c5e66 (r0)   16 to 20  / +27            204
+ *   1.5   0.35  3.0  8aa6dc / 5c5e66        68        / +47            200
+ *   1.8   0.35  3.0  a9bbd9 / 7a6e62        88        / +29            200
+ *   2.2   0.30  3.0  93acd8 / 6e6660        86        / +40            202
+ *   2.0   0.35  3.2  9fb6dc / 746e6a (r1)   see work/fix1_render/NOTES.md, the committed solve
+ *
+ * The fill is now most of the light on a shaded face, so its colour is what shade LOOKS like: the sky
+ * term a soft blue (a notch lighter than the style lock's 0x8fa9d6 so shade is blue grey, not blue), the
+ * ground term a warm neutral so a wall in shade takes a little of the lit cobble beside it and reads
+ * cooler than its lit face without going the same blue as the road.
+ */
+export const SUN_INTENSITY = 3.2;      // r0 was 4.2: the sun drops so sunlit whitewash stays about 205 (below 235) with the fill under it
+export const SKY_COLOR = 0x9fb6dc;      // hemisphere sky term (r0 0x8aa6dc): soft blue, the colour of shade on the road
+export const GROUND_COLOR = 0x746e6a;   // the ground a vertical face or an underside sees (r0 0x5c5e66): warm neutral, brighter, so shaded walls are not black
+export const SKY_INTENSITY = 2.0;       // r0 was 0.34: shaded cobble at luma 85 to 95, B minus R about +35
+export const ENV_INTENSITY = 0.35;      // r0 was 0.10: the PMREM of the cumulus panorama (sky/sky_pano_*.webp, round 1) carries cream cloud tops and the horizon glow, so it is less blue than the round 0 sky and can run higher
 /** Lit cobble and sand bounce onto vertical faces, linear irradiance. Warm, small: the sun is at 14 degrees so flat ground takes a quarter of the key. */
 export const BOUNCE_COLOR = [0.030, 0.020, 0.011];   // 0.35 of the physical sunlit cobble bounce: most ground beside a wall is in that wall's shadow, and the target shade is cool
 export const BOUNCE_UNDER = 0.25;
@@ -270,7 +292,92 @@ function bouncePatch(shader, uniforms) {
     .replace('#include <lights_fragment_maps>', BOUNCE_FS + '\n#include <lights_fragment_maps>');
 }
 
-/** Debug knobs for A/B in the critic rounds: `?bounce=0`, `?fade=0`, `?exposure=0.8`. */
+/**
+ * FILL OCCLUDERS (round 1). A hemisphere light and an environment map have no occlusion, and with the
+ * fill now most of the light on a shaded face the inside of the rock tunnel (section H) rendered as a
+ * sky blue road under a warm vault (work/fix1_render/sky_U3_p0.80.png). Up to two oriented boxes scale
+ * the indirect terms (hemisphere, ambient, ground bounce, PMREM diffuse and specular) down inside them,
+ * soft over the last 40 percent of the box along its axis so the fill returns toward the portals.
+ * The direct sun is untouched (the CSM shadow already handles it). rig.setFillOccluders([...]) sets
+ * them; by default the rig reads the tunnel from level/placements LANDMARKS and the road axis from
+ * track/spline (dynamic imports, so a build without those exports simply has no occluder).
+ */
+const OCC_N = 2;
+const OCC_PARS_VS = /* glsl */`
+varying vec3 vOccW;`;
+const OCC_VS = /* glsl */`
+{
+  vec4 occWP = vec4(transformed, 1.0);
+  #ifdef USE_BATCHING
+    occWP = batchingMatrix * occWP;
+  #endif
+  #ifdef USE_INSTANCING
+    occWP = instanceMatrix * occWP;
+  #endif
+  vOccW = (modelMatrix * occWP).xyz;
+}`;
+const OCC_PARS_FS = /* glsl */`
+varying vec3 vOccW;
+uniform vec4 uOccBox[${OCC_N}];    // centre xyz, yaw
+uniform vec4 uOccHalf[${OCC_N}];   // half extents xyz, strength (0 = unused)
+float fillOcclusion() {
+  float occ = 1.0;
+  for (int i = 0; i < ${OCC_N}; i++) {
+    vec4 ob = uOccBox[i]; vec4 oh = uOccHalf[i];
+    if (oh.w <= 0.0) continue;
+    vec3 d = vOccW - ob.xyz;
+    float c = cos(ob.w), s = sin(ob.w);
+    vec3 l = vec3(c * d.x - s * d.z, d.y, s * d.x + c * d.z);
+    vec3 q = abs(l) / max(oh.xyz, vec3(0.01));
+    float inside = (1.0 - smoothstep(0.6, 1.05, q.z)) * (1.0 - smoothstep(0.9, 1.1, max(q.x, q.y)));
+    occ *= 1.0 - oh.w * inside;
+  }
+  return occ;
+}`;
+const OCC_FS = /* glsl */`
+{
+  float occF = fillOcclusion();
+  #if defined( RE_IndirectDiffuse )
+    irradiance *= occF;
+    iblIrradiance *= occF;
+  #endif
+  #if defined( RE_IndirectSpecular )
+    radiance *= occF;
+  #endif
+}`;
+let _occU = null;
+function occUniforms(THREE) {
+  if (!_occU) {
+    _occU = {
+      uOccBox: { value: Array.from({ length: OCC_N }, () => new THREE.Vector4(0, 0, 0, 0)) },
+      uOccHalf: { value: Array.from({ length: OCC_N }, () => new THREE.Vector4(1, 1, 1, 0)) },
+    };
+  }
+  return _occU;
+}
+function occPatch(shader, uniforms) {
+  Object.assign(shader.uniforms, uniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>' + OCC_PARS_VS)
+    .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>' + OCC_VS);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>' + OCC_PARS_FS)
+    .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>' + OCC_FS);
+}
+/** The default occluder: the rock tunnel, from the level plan and the road axis through it. */
+async function defaultOccluders(THREE) {
+  try {
+    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r1-20260906113009'), import('../track/spline.js?v=r1-20260906113009')]);
+    const t = pl.LANDMARKS && pl.LANDMARKS.tunnel, spline = sp.SPLINE;
+    if (!t || !spline || typeof spline.nearest !== 'function') return [];
+    const n = spline.nearest(t.x, t.z);
+    const r = spline.samples[n.index];
+    // rock_tunnel is 20 x 24 x 12 with its axis along the road, portal clear 12 wide and 6 high
+    return [{ x: t.x, y: r.y + 3.0, z: t.z, yaw: Math.atan2(r.tx, r.tz), hw: 7.0, hh: 3.8, hd: 12.5, strength: 0.8 }];
+  } catch (e) { return []; }
+}
+
+/** Debug knobs for A/B in the critic rounds: `?bounce=0`, `?fade=0`, `?occ=0`, `?exposure=0.8`, `?hemi=2&env=0.35&sun=3.2`, `?hemic=9fb6dc&groundc=746e6a`. */
 function knob(name) {
   try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; }
 }
@@ -407,6 +514,8 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
 
   // The cool fill, part one: the hemisphere light. Part two is the environment map below.
   const sky = new THREE.HemisphereLight(SKY_COLOR, GROUND_COLOR, +(knob('hemi') || SKY_INTENSITY));
+  if (knob('hemic')) sky.color.setHex(parseInt(knob('hemic'), 16));          // A/B: `?hemic=a9bbd9&groundc=7a6e62`
+  if (knob('groundc')) sky.groundColor.setHex(parseInt(knob('groundc'), 16));
   sky.position.set(0, 50, 0);
   sky.name = 'skyfill';
   scene.add(sky);
@@ -443,12 +552,15 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
   const fadeU = { clutter: { value: new THREE.Vector2(...cullFade.clutter) }, scatter: { value: new THREE.Vector2(...cullFade.scatter) }, fine: { value: new THREE.Vector2(...cullFade.fine) } };
   const fadeVariants = new WeakMap();
   const useBounce = knob('bounce') !== '0';
+  const useOcc = knob('occ') !== '0';
+  const occU = occUniforms(THREE);
   function setupMaterial(m) {
     if (!m || done.has(m)) return false;
     const lit = isLit(m), foggable = isFoggable(m);
     if (!lit && !foggable) return false;
     done.add(m);
     const bounce = lit && useBounce ? bounceUniforms(THREE) : null;
+    const occ = lit && useOcc ? occU : null;
     const vrm = lit && !!m.isVertexPBR;
     const fade = m.userData && m.userData.__cullFade && knob('fade') !== '0' ? fadeU[m.userData.__cullFade] : null;
     // CSM replaces onBeforeCompile. If a module (materials, terrain, fx) already hooked the material,
@@ -464,10 +576,11 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
       if (csmHook) csmHook.call(this, shader, r);
       if (vrm) vrmPatch(shader);
       if (bounce) bouncePatch(shader, bounce);
+      if (occ) occPatch(shader, occ);
       if (foggable) aerialPatch(shader, atm);
       if (fade) fadePatch(shader, fade);
     };
-    m.customProgramCacheKey = () => (hasPrev ? prevKey : '') + (csmHook ? '|csm' + T.cascades : '') + (vrm ? '|vrmfix' : '') + (bounce ? '|bounce' : '') + (foggable ? '|aer' : '') + (fade ? '|fade' : '');
+    m.customProgramCacheKey = () => (hasPrev ? prevKey : '') + (csmHook ? '|csm' + T.cascades : '') + (vrm ? '|vrmfix' : '') + (bounce ? '|bounce' : '') + (occ ? '|occ' : '') + (foggable ? '|aer' : '') + (fade ? '|fade' : '');
     m.needsUpdate = true;
     return true;
   }
@@ -525,6 +638,26 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
     if (r && r.scatter) fadeU.scatter.value.set(r.scatter[0], r.scatter[1]);
     if (r && r.fine) fadeU.fine.value.set(r.fine[0], r.fine[1]);
   }
+  /**
+   * Fill occluders: up to two boxes { x, y, z, yaw, hw, hh, hd, strength } (metres, radians, yaw about y
+   * with hd along the rotated z axis; strength 0..1 is how much of the fill is removed at the core).
+   * An explicit call wins over the default tunnel box read from the level plan.
+   */
+  let occExplicit = false;
+  function setFillOccluders(list, explicit = true) {
+    if (explicit) occExplicit = true;
+    const boxes = Array.isArray(list) ? list.slice(0, OCC_N) : [];
+    for (let i = 0; i < OCC_N; i++) {
+      const b = boxes[i];
+      if (b && Number.isFinite(b.x)) {
+        occU.uOccBox.value[i].set(b.x, b.y || 0, b.z, b.yaw || 0);
+        occU.uOccHalf.value[i].set(b.hw || 1, b.hh || 1, b.hd || 1, Math.max(0, Math.min(1, b.strength === undefined ? 0.8 : b.strength)));
+      } else {
+        occU.uOccHalf.value[i].w = 0;
+      }
+    }
+  }
+  if (useOcc) defaultOccluders(THREE).then((list) => { if (!occExplicit && list.length) { setFillOccluders(list, false); console.info('[lighting] fill occluder at the tunnel', JSON.stringify(list[0])); } });
   refresh();
 
   let frame = 0;
@@ -560,7 +693,7 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
 
   const rig = {
     sun, sky, fog, csm, sunDir, tier: T, scene, atmos: atm, environment: envTex, envIsPanorama,
-    update, refresh, patchFog, setExposure, setSun, setFill, setupMaterial, setCullFade, cullFade: fadeU, bounce: bounceUniforms(THREE), dispose,
+    update, refresh, patchFog, setExposure, setSun, setFill, setupMaterial, setCullFade, setFillOccluders, cullFade: fadeU, bounce: bounceUniforms(THREE), occluders: occU, dispose,
   };
   try { globalThis.__RIG__ = rig; } catch (e) { /* no globalThis (tests) */ }
   return rig;

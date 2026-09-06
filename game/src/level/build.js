@@ -22,10 +22,10 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r0-20260906043348';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r0-20260906043348';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r0-20260906043348';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r0-20260906043348';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r1-20260906113009';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r1-20260906113009';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r1-20260906113009';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r1-20260906113009';
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
@@ -33,7 +33,30 @@ const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
 // static bake merges 2 x 2 of them (60 m). Measured on the integrated game (work/game/census2.mjs):
 // 107 blocks of 30 m gave 1289 baked meshes with 866 in view from the piazza; the whole town is in
 // view from three points of the lap, so finer blocks bought no culling and cost 3x the draws.
-const BAKE_SPAN = 3;
+const BAKE_SPAN = 1;          // 30 m cells for the heavy surface buckets (integrator, round 1; was 3 = 90 m for everything)
+const BAKE_SPAN_COARSE = 3;   // 90 m blocks for the light buckets (metal, fabric, foliage, cards, glass, lamps)
+// The hybrid granularity, measured at the piazza exit (progress 0.505, desktop, camera plus shadow pass):
+// 90 m blocks 2.26M tris / 716 calls, 60 m 1.73M / 800, 30 m 1.35M / 1019. Heavy buckets (stone, plaster,
+// timber, tile, ground) carry about 85 percent of a block's triangles, the light ones about half of its
+// draws, so the heavy buckets bake per 30 m cell and the light ones per 90 m block.
+// Light buckets (measured at the same spot on 30 m cells, draws / triangles in view): the three ground sets
+// (fillets, pads: 91 / 71k), the local projection variants and unnamed parts (glass, lamps, caps: 37 / 6k), cards,
+// canvas (20 / 29k). Everything else (stone, plaster, timber, tile, metal, foliage) stays on the 30 m cells.
+const LIGHT_SETS = new Set(['asphalt_worn', 'sand_beach', 'grass_dry', 'canvas_stripe', 'cobble_warm']);   // cobble_warm off the road: pads and kerb beds, 26 draws for 5k triangles
+function lightBucket(m) {
+  if (!m || Array.isArray(m)) return false;
+  const u = m.userData || {};
+  if (!u.triSet) return true;
+  if (u.triLocal) return true;
+  if (m.alphaTest > 0 || String(u.triSet).startsWith('card')) return true;   // cutout cards: 62 draws for 10k triangles at the hairpin exit
+  return LIGHT_SETS.has(u.triSet);
+}
+function coarseKeyOf(fineKey) {
+  const [k] = String(fineKey).split('~');   // the ~fine split is dropped: one coarse block per 90 m, always drawn
+  const [bx, bz] = k.split('_').map(Number);
+  const f = BAKE_SPAN_COARSE / BAKE_SPAN;
+  return `c${Math.floor(bx / f)}_${Math.floor(bz / f)}`;
+}
 // Small props bake into a second group per block, named '#nocast' so the render rig dithers them out
 // over the last 8 m before the tier's scatter distance (140 m high, 90 m phone) and main.js hides the
 // group past it: "cull distance for small props", the budget lever ARCHITECTURE allows. Houses,
@@ -132,21 +155,43 @@ export async function buildLevel(THREE_, opts) {
       }
       return;
     }
+    // Round 1 (fix, level): every collider that stands ON a drivable margin (the pavement, the quay strip, the
+    // lay by) is a cylinder or a chain of cylinders, never a box. The World slides a kart along a face, but a
+    // face square to the travel direction has no tangent to slide along, so a kart riding the pavement was
+    // pinned by the start gantry's east leg, the gate piers, the market tyre walls and the quay davit (gate
+    // runs: 0 to 8 stalls, 15 s against the davit). A round contact deflects: the kart rolls off to one side.
+    const cyl = (cx, cz, r, hh, tag) => { world.addCylinder(new T.Vector3(cx, y + hh / 2, cz), r, hh, tag); colliders++; };
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const local = (lx, lz) => [p.x + lx * c + lz * s, p.z - lx * s + lz * c];   // local (x, z) to world for this placement
     if (p.asset === 'start_gantry' || p.asset === 'lap_arch' || p.asset === 'town_gate_arch') {
-      // arches collide by their piers only
-      if (world.addBox) {
+      // arches collide by their piers only, each a cylinder that covers the square pier's corners
+      if (world.addCylinder) {
         const pier = p.asset === 'start_gantry' ? 1.2 : p.asset === 'lap_arch' ? 0.8 : 1.75;
-        const c = Math.cos(yaw), s = Math.sin(yaw);
         for (const side of [-1, 1]) {
-          const lx = side * (w / 2 - pier / 2), cx = p.x + lx * c, cz = p.z - lx * s;
-          world.addBox(new T.Vector3(cx, y + h / 2, cz), new T.Vector3(pier, h, Math.max(pier, d)), yaw, p.tag); colliders++;
+          const [cx, cz] = local(side * (w / 2 - pier / 2), 0);
+          cyl(cx, cz, pier * 0.72, h, p.tag);
         }
       }
       return;
     }
+    if (p.asset === 'tyre_wall' && world.addCylinder) {
+      // a capsule: three cylinders along the long axis, so the END of a tyre wall is round and a kart that
+      // runs along the kerb line into it slides round instead of stopping dead against a 0.7 m flat end
+      for (const lx of [-0.62, 0, 0.62]) { const [cx, cz] = local(lx, 0); cyl(cx, cz, 0.42, h, p.tag); }
+      return;
+    }
+    if (p.asset === 'harbour_davit' && world.addCylinder) {
+      // the pedestal only (0.6 m square at the base); the jib reaches out 2.8 m at 3.4 m, above a driver's helmet
+      cyl(p.x, p.z, 0.5, h, p.tag);
+      return;
+    }
+    if ((p.asset === 'pit_toolcart' || p.asset === 'produce_crate_stack') && world.addCylinder) {
+      cyl(p.x, p.z, Math.max(w, d) / 2 * 0.95, h, p.tag);
+      return;
+    }
     if (CYLINDER_ASSETS.has(p.asset) && world.addCylinder) {
       const r = p.asset === 'clock_tower' || p.asset === 'lighthouse' || p.asset === 'fountain' ? Math.min(w, d) / 2 : Math.min(w, d) / 2 * 0.5;
-      world.addCylinder(new T.Vector3(p.x, y, p.z), Math.max(0.12, r), h, p.tag); colliders++;
+      world.addCylinder(new T.Vector3(p.x, y + h / 2, p.z), Math.max(0.12, r), h, p.tag); colliders++;   // geometric centre, as addBox
     } else if (world.addBox) {
       world.addBox(new T.Vector3(p.x, y + h / 2, p.z), new T.Vector3(w, h, d), yaw, p.tag); colliders++;
     }
@@ -182,6 +227,7 @@ export async function buildLevel(THREE_, opts) {
     // unify stays OFF for movers too (integrator, round 0): with unify the spectator groups' crowd cards took
     // the asset's dominant set and rendered as opaque black squares at the lower street and the piazza
     // (rounds/r0 finish run frames 1 and 2)
+    if (p.asset === 'kerb_module') paintKerb(T, obj);
     applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: false });
     counts.set(p.asset, (counts.get(p.asset) || 0) + 1);
     assetNames.add(p.asset);
@@ -232,12 +278,30 @@ export async function buildLevel(THREE_, opts) {
     }
   }
 
+  // 5a. hybrid granularity: move every light bucket mesh (world transform kept) from its 30 m cell group
+  // into the 90 m block group, so the heavy buckets cull finely and the light ones do not multiply draws
+  if (BAKE_SPAN_COARSE > BAKE_SPAN) {
+    for (const [key, g] of [...blockGroups]) {
+      if (key.startsWith('c')) continue;
+      g.updateMatrixWorld(true);
+      const move = [];
+      g.traverse((o) => { if (o.isMesh && lightBucket(o.material)) move.push(o); });
+      if (!move.length) continue;
+      const ck = coarseKeyOf(key);
+      const cg = groupFor(ck);
+      for (const m of move) cg.attach(m);
+      for (const n of blockNames.get(key)) blockNames.get(ck).add(n);
+    }
+  }
+
   // 5. bake per block
   progress(0.82, 'baking blocks');
   const blocks = new Map();
   let k = 0;
   for (const [key, g] of blockGroups) {
     g.updateMatrixWorld(true);
+    let empty = true; g.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position && o.geometry.attributes.position.count > 0) empty = false; });
+    if (empty) continue;   // a cell whose every mesh moved to the coarse block
     const baked = bakeStatic(g);
     // (no '#nocast' suffix: the rig's dithered fade variant of a CARD material dropped its alpha test and
     // the standalone bougainvillea cards drew as 3 x 4 m black squares; main.js hides the fine group by
@@ -246,7 +310,17 @@ export async function buildLevel(THREE_, opts) {
     baked.userData.fine = key.endsWith('~fine');
     baked.userData.block = key;
     baked.userData.assets = [...blockNames.get(key)];
-    baked.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // a coarse (light bucket) block casts only from its cards (bunting, crowds, fronds) and canvas awnings:
+    // fillets, pads, glass, lamp heads and caps have no shadow anyone can see (23 calls and 67k triangles
+    // of shadow pass at the piazza exit); the 30 m cells cast from every bucket
+    const coarse = key.startsWith('c');
+    baked.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      const u = (m && m.userData) || {};
+      o.castShadow = !coarse || (m && m.alphaTest > 0) || u.triSet === 'canvas_stripe';
+      o.receiveShadow = true;
+    });
     tmpBox.setFromObject(baked);
     blockBoxes.get(key).copy(tmpBox);
     baked.userData.box = tmpBox.clone();
@@ -301,6 +375,60 @@ export async function buildLevel(THREE_, opts) {
 
   progress(1, 'level ready');
   return { blocks, movers, colliders, assetNames, counts, itemBoxAnchors, padAnchors, visibleAssets, missing, placements: list };
+}
+
+/**
+ * Kerb paint, per instance, BEFORE applyMaterials bakes colour into the vertices (the same route
+ * kartview.js takes for the liveries). Round 1 critic: "kerb red should be hue 0, saturation 0.6 or
+ * more, white luma 230 or more; in sun the red reads salmon and in shade maroon", and claim 3's
+ * kerbRW counted only 3 of 8 frames. Measured on a lit kerb before this change (work/fix1_level,
+ * shot at progress 0.125): red hue 8 sat 0.81 luma 76, white luma 173 sat 0.25, so the WHITE blocks
+ * never met the metric's white (luma over 200, saturation under 0.20): whitewash 0xf1e6d2 under the
+ * warm sun is cream. What the level can do about it:
+ *   - the white stripes become a neutral near white (about 0xf1efec body, 0xf8f7f5 top, saturation 0.03,
+ *     still not pure white) so the sun's warmth lands them under 0.20 where the fill reaches them; measured
+ *     after: white saturation 0.07 to 0.14 in frame (was 0.25)
+ *   - the red stripes turn to hue 4, saturation about 0.75, a shade lighter (about 0xea4438 body) so the
+ *     sun does not push them salmon and the shade does not crush them to maroon; measured after: hue 353 to
+ *     356, saturation 0.82 in frame (was hue 8, and salmon or maroon by the critic's eye)
+ *   - both are renamed 'metal' (the painted set: a flat painted albedo with a specular highlight at
+ *     roughness 0.45) instead of 'stone' (the dressed masonry set with its albedo variation): a
+ *     painted kerb block is glossy paint on concrete, and the highlight is what lifts the sunlit
+ *     faces toward the bar's glossy kerbs
+ * The stone strip, the base band and the joint bed keep the asset's stone. Materials are cloned per
+ * instance because ASSET() shares them across instances of the prototype.
+ */
+const _kc = { c: null };
+function paintKerb(T, obj) {
+  if (!_kc.c) _kc.c = new T.Color();
+  const c = _kc.c, cloned = new Map();
+  obj.traverse((o) => {
+    if (!o.isMesh || !o.material || !o.material.color) return;
+    let m = cloned.get(o.material);
+    if (!m) {
+      const src = o.material;
+      c.copy(src.color).convertLinearToSRGB();
+      const max = Math.max(c.r, c.g, c.b), min = Math.min(c.r, c.g, c.b);
+      const sat = max > 0 ? (max - min) / max : 0;
+      const lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+      let hue = 0;
+      if (max > min) { const d = max - min; hue = max === c.r ? 60 * (((c.g - c.b) / d + 6) % 6) : max === c.g ? 60 * ((c.b - c.r) / d + 2) : 60 * ((c.r - c.g) / d + 4); }
+      const red = (hue < 25 || hue > 335) && sat > 0.5 && lum > 0.25;
+      const white = sat < 0.2 && lum > 0.78;
+      if (!red && !white) { cloned.set(src, src); return; }
+      m = src.clone();
+      // keep the part's own value (the top is bleached, the chamfer a shade lighter) and replace hue and saturation
+      // red: hue 4, HSV saturation about 0.75, lightness lifted 12 percent (a saturated red has a low luma by
+      // construction, 0.2126 R + 0.7152 G + 0.0722 B; the metric's red needs luma over 50 in the frame, and the
+      // measured in frame red was 42 to 50 at the darker value). white: HSV saturation 0.03, lightness 0.93 to 0.97.
+      if (red) m.color.setHSL(4 / 360, 0.80, Math.min(0.62, Math.max(0.52, 0.5 * (max + min) * 1.12)), T.SRGBColorSpace);
+      else m.color.setHSL(40 / 360, 0.14, Math.min(0.97, Math.max(0.93, 0.5 * (max + min) * 1.07)), T.SRGBColorSpace);
+      m.name = 'metal';
+      m.roughness = 0.45; m.metalness = 0.06;
+      cloned.set(src, m);
+    }
+    if (m !== o.material) o.material = m;
+  });
 }
 
 /** block key helper shared with telemetry (TRACK-PLAN section 10) */

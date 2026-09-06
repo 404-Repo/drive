@@ -31,38 +31,38 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r0-20260906043348';
-import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r0-20260906043348';
-import { createSky } from './src/render/sky.js?v=r0-20260906043348';
-import { createLightingRig } from './src/render/lighting.js?v=r0-20260906043348';
-import { createPost } from './src/render/post.js?v=r0-20260906043348';
-import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r0-20260906043348';
-import { buildRoad } from './src/track/road.js?v=r0-20260906043348';
-import { buildTerrain } from './src/track/terrain.js?v=r0-20260906043348';
-import { buildSea } from './src/track/sea.js?v=r0-20260906043348';
-import { World } from './src/track/collision.js?v=r0-20260906043348';
-import { buildLevel } from './src/level/build.js?v=r0-20260906043348';
-import { GRID, PLACEMENTS } from './src/level/placements.js?v=r0-20260906043348';
-import { KartBody, resolveBumps } from './src/kart/physics.js?v=r0-20260906043348';
-import { Player } from './src/kart/player.js?v=r0-20260906043348';
-import { KartView } from './src/kart/kartview.js?v=r0-20260906043348';
-import { ChaseCamera } from './src/kart/camera.js?v=r0-20260906043348';
-import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r0-20260906043348';
-import { Director } from './src/ai/director.js?v=r0-20260906043348';
-import { ItemSystem } from './src/items/items.js?v=r0-20260906043348';
-import { Screens } from './src/ui/screens.js?v=r0-20260906043348';
-import { HUD } from './src/ui/hud.js?v=r0-20260906043348';
-import { Minimap } from './src/ui/minimap.js?v=r0-20260906043348';
-import { Input } from './src/ui/input.js?v=r0-20260906043348';
-import { TouchControls } from './src/ui/touch.js?v=r0-20260906043348';
-import { Audio } from './src/audio/audio.js?v=r0-20260906043348';
-import { Events } from './src/game/events.js?v=r0-20260906043348';
-import { Race } from './src/game/race.js?v=r0-20260906043348';
-import { createTelemetry } from './src/game/telemetry.js?v=r0-20260906043348';
+import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r1-20260906113009';
+import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r1-20260906113009';
+import { createSky } from './src/render/sky.js?v=r1-20260906113009';
+import { createLightingRig } from './src/render/lighting.js?v=r1-20260906113009';
+import { createPost } from './src/render/post.js?v=r1-20260906113009';
+import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r1-20260906113009';
+import { buildRoad } from './src/track/road.js?v=r1-20260906113009';
+import { buildTerrain } from './src/track/terrain.js?v=r1-20260906113009';
+import { buildSea } from './src/track/sea.js?v=r1-20260906113009';
+import { World } from './src/track/collision.js?v=r1-20260906113009';
+import { buildLevel } from './src/level/build.js?v=r1-20260906113009';
+import { GRID, PLACEMENTS } from './src/level/placements.js?v=r1-20260906113009';
+import { KartBody, resolveBumps } from './src/kart/physics.js?v=r1-20260906113009';
+import { Player } from './src/kart/player.js?v=r1-20260906113009';
+import { KartView } from './src/kart/kartview.js?v=r1-20260906113009';
+import { ChaseCamera } from './src/kart/camera.js?v=r1-20260906113009';
+import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r1-20260906113009';
+import { Director } from './src/ai/director.js?v=r1-20260906113009';
+import { ItemSystem } from './src/items/items.js?v=r1-20260906113009';
+import { Screens } from './src/ui/screens.js?v=r1-20260906113009';
+import { HUD } from './src/ui/hud.js?v=r1-20260906113009';
+import { Minimap } from './src/ui/minimap.js?v=r1-20260906113009';
+import { Input } from './src/ui/input.js?v=r1-20260906113009';
+import { TouchControls } from './src/ui/touch.js?v=r1-20260906113009';
+import { Audio } from './src/audio/audio.js?v=r1-20260906113009';
+import { Events } from './src/game/events.js?v=r1-20260906113009';
+import { Race } from './src/game/race.js?v=r1-20260906113009';
+import { createTelemetry } from './src/game/telemetry.js?v=r1-20260906113009';
 
 const Q = new URLSearchParams(location.search);
 const STAMP = window.__BUILD_STAMP__ || null;
-const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r0';
+const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r1';
 const STRICT = Q.get('strict') === '1';
 const LAPS = Math.max(1, Math.min(9, parseInt(Q.get('laps') || '3', 10) || 3));
 const DROP = Q.get('drop') === '1';
@@ -216,7 +216,7 @@ async function boot() {
   const bodyById = new Map(bodies.map((b) => [b.id, b]));
   const playerBody = bodies[0];
   const views = new Map();
-  for (const r of roster) views.set(r.id, new KartView({ scene, livery: r.livery, id: r.id }));
+  for (const r of roster) views.set(r.id, new KartView({ scene, livery: r.livery, id: r.id, hero: r.id === PLAYER.id }));
   await Promise.all([...views.values()].map((v) => v.load()));
   for (const v of views.values()) for (const m of v.missing || []) missingAssets.add(m);
   mark('karts');
@@ -372,9 +372,9 @@ async function boot() {
   // casters near the camera can throw a shadow the player sees, so castShadow is toggled by the
   // distance from the camera to the block box (tier.castDist is 40 high, 30 phone; the sun is 14
   // degrees up so a 24 m tower throws 96 m, hence the wider band). Receivers are untouched.
-  const CAST_DIST = tier.name === 'phone' ? 40 : 45;
+  const CAST_DIST = tier.castDist || (tier.name === 'phone' ? 30 : 40);   // render/quality.js castDist (round 0 had 45 on the high tier)
   const FINE_FAR = tier.name === 'phone' ? 90 : 140;   // the rig's scatter fade ends here (render/lighting.js defaultCullFade)
-  const casterBlocks = [...level.blocks.values()].map((g) => { const meshes = []; g.traverse((o) => { if (o.isMesh) meshes.push(o); }); return { g, box: g.userData.box, meshes, on: true, fine: !!g.userData.fine }; });
+  const casterBlocks = [...level.blocks.values()].map((g) => { const meshes = []; g.traverse((o) => { if (o.isMesh && o.castShadow) meshes.push(o); }); return { g, box: g.userData.box, meshes, on: true, fine: !!g.userData.fine }; });   // only the buckets the bake marked as casters (round 1: fillets, glass and caps never cast)
   // the seven AI drivers do not cast (the chassis and wheels give the contact shadow); the player's does
   for (const v of views.values()) {
     if (v.id === PLAYER.id) continue;
@@ -382,8 +382,12 @@ async function boot() {
     // the AI wheels sit inside the chassis shadow at a 14 degree sun: the chassis alone gives the contact shadow (16 draws per kart saved in the shadow pass)
     for (const w of v.wheels || []) { const n = w && (w.pivot || w.spin); if (n && n.traverse) n.traverse((o) => { if (o.isMesh) o.castShadow = false; }); }
   }
-  const casterMovers = level.movers.map((m) => { const meshes = []; m.object.traverse((o) => { if (o.isMesh) meshes.push(o); }); return { obj: m.object, meshes, on: true }; });
-  const casterKarts = [...views.values()].map((v) => { const meshes = []; v.object.traverse((o) => { if (o.isMesh && o.castShadow) meshes.push(o); }); return { obj: v.object, meshes, on: true }; });
+  const MOVER_FAR = { mooring_buoy: 120, rowing_boat: 220, spectator_group: 220, fishing_boat: 250 };   // an 8 m boat at 250 m is 20 px long in the haze   // 0.4 m buoy at 120 m and a 3 m boat or a crowd at 220 m are under 3 px tall
+  const casterMovers = level.movers.map((m) => { const meshes = []; m.object.traverse((o) => { if (o.isMesh) meshes.push(o); }); return { obj: m.object, meshes, on: true, far: MOVER_FAR[m.asset] || 0 }; });
+  const DRIVER_FAR = 80;   // 5 px of helmet
+  // terrain tiles cast by the same distance rule as the blocks (round 1: every tile cast every frame, 43k triangles and 14 calls of shadow pass at the hairpin exit)
+  const casterTerrain = (terrain.tiles || []).filter((t) => t.isMesh && t.geometry).map((t) => { t.updateMatrixWorld(true); if (!t.geometry.boundingBox) t.geometry.computeBoundingBox(); const box = t.geometry.boundingBox.clone().applyMatrix4(t.matrixWorld); return { t, box, on: true }; });
+  const casterKarts = [...views.values()].map((v) => { const meshes = []; v.object.traverse((o) => { if (o.isMesh && o.castShadow) meshes.push(o); }); return { obj: v.object, meshes, on: true, driver: v.hero ? null : (v.driver || null) }; });
   let castFrame = 0;
   function updateCasters() {
     if ((castFrame++ % 6) !== 0) return;
@@ -395,12 +399,20 @@ async function boot() {
       if (c.fine) c.g.visible = d < FINE_FAR;
     }
     for (const c of casterMovers) {
-      const on = c.obj.position.distanceTo(cp) < CAST_DIST;
+      const d = c.obj.position.distanceTo(cp);
+      const on = d < CAST_DIST;
       if (on !== c.on) { c.on = on; for (const m of c.meshes) m.castShadow = on; }
+      if (c.far) c.obj.visible = d < c.far;   // sub pixel movers (buoys, rowing boats, crowds) beyond their range are not drawn
+    }
+    for (const c of casterTerrain) {
+      const on = c.box.distanceToPoint(cp) < CAST_DIST;
+      if (on !== c.on) { c.on = on; c.t.castShadow = on; }
     }
     for (const c of casterKarts) {
-      const on = c.obj.position.distanceTo(cp) < CAST_DIST;
+      const d = c.obj.position.distanceTo(cp);
+      const on = d < CAST_DIST;
       if (on !== c.on) { c.on = on; for (const m of c.meshes) m.castShadow = on; }
+      if (c.driver) c.driver.visible = d < DRIVER_FAR;   // an AI driver past 120 m is 4 px tall: 8 draws and 7k triangles a kart for nothing
     }
   }
   const aiCtx = { racers: bodies, player: playerBody, items, time: 0, countdown: null };

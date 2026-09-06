@@ -74,20 +74,20 @@ export function makeFillet(p, size, spec, heightAt, paint = 'grass') {
   const toWorld = (lx, lz) => [p.x + lx * c + lz * s, p.z - lx * s + lz * c];
   const pts = [];
   if (spec.r) {
-    const r = spec.r, n = Math.max(12, Math.round((2 * Math.PI * r) / 0.35));
+    const r = spec.r, n = Math.max(10, Math.round((2 * Math.PI * r) / 0.5));
     for (let i = 0; i < n; i++) { const t = (i / n) * Math.PI * 2; pts.push([r * Math.cos(t), r * Math.sin(t), Math.cos(t), Math.sin(t)]); }
   } else {
     const hw = size[0] / 2 + 0.02, hd = size[1] / 2 + 0.02;
     if (hw < 0.15 || hd < 0.08) return null;
     const cr = Math.min(0.15, hw, hd);
-    const side = (x0, z0, x1, z1, nx, nz) => { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / 0.35)); for (let i = 0; i < n; i++) { const t = i / n; pts.push([x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, nx, nz]); } };
+    const side = (x0, z0, x1, z1, nx, nz) => { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / 0.5)); for (let i = 0; i < n; i++) { const t = i / n; pts.push([x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, nx, nz]); } };
     const arc = (cx, cz, a0) => { for (let i = 0; i < 3; i++) { const t = a0 + (i / 3) * (Math.PI / 2); pts.push([cx + cr * Math.cos(t), cz + cr * Math.sin(t), Math.cos(t), Math.sin(t)]); } };
     side(-hw + cr, -hd, hw - cr, -hd, 0, -1); arc(hw - cr, -hd + cr, -Math.PI / 2);
     side(hw, -hd + cr, hw, hd - cr, 1, 0); arc(hw - cr, hd - cr, 0);
     side(hw - cr, hd, -hw + cr, hd, 0, 1); arc(-hw + cr, hd - cr, Math.PI / 2);
     side(-hw, hd - cr, -hw, -hd + cr, -1, 0); arc(-hw + cr, -hd + cr, Math.PI);
   }
-  const RINGS = 3, pos = [], idx = [], n = pts.length;
+  const RINGS = 2, pos = [], idx = [], n = pts.length;   // 2 rings at 0.5 m spacing (integrator, round 1: 3 rings at 0.35 m were 103k triangles in view at the hairpin exit for a 6 cm lift)
   for (let r = 0; r <= RINGS; r++) {
     const t = r / RINGS;                             // 0 at the object, 1 at the outer edge
     const prof = 1 - Math.sin(t * Math.PI / 2);      // quarter cosine: steep at the object, flat at the edge

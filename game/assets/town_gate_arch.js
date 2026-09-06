@@ -42,8 +42,8 @@ export default function (THREE) {
   const glass = mat(null, 0x8fa9d6, 0.15, 0, { transparent: true, opacity: 0.85 });
   const lamp = mat(null, 0xffc48a, 0.5, 0, { emissive: 0xffc48a, emissiveIntensity: 1.0 });
   const dark = mat('plaster', 0x6a5638, 0.9, 0);
-  const cardA = mat('card:bougainvillea', 0xd8388a, 0.8, 0, { side: THREE.DoubleSide });
-  const cardB = mat('card:bougainvillea', 0xd9398b, 0.8, 0, { side: THREE.DoubleSide });
+  const cardA = mat('card:bougainvillea_a', 0xd8388a, 0.8, 0, { side: THREE.DoubleSide });
+  const cardB = mat('card:bougainvillea_b', 0xd9398b, 0.8, 0, { side: THREE.DoubleSide });
 
   const CLEAR = 11.5, PW = 1.75, PH = 7.0, PD = 1.75, PX = CLEAR / 2 + PW / 2, BAND = 0.8, SPR = 3.6, CROWN = 6.5;
   const HW = CLEAR / 2, HH = CROWN - SPR;

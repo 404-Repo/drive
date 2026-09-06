@@ -3,7 +3,9 @@
  *
  *   position numeral top left in Pilat Extended Black with the ordinal in the pixel face
  *   LAP n/3 top right and the race and best lap times in Helvetica Now Display XBold
- *   item slot top centre with a roulette, icons drawn as inline SVG (original shapes, no text)
+ *   item slot top centre: an ink plate with a paper frame, coral base rule and hard offset shadow
+ *   (the deck's button language); empty it shows our item box as an outline with a breathing
+ *   coral core; the roulette cycles the five icons; icons are inline SVG (original shapes, no text)
  *   countdown 3 2 1 GO in the wide face, centre
  *   banners FINAL LAP, WRONG WAY, FINISH (a coral bar, centre)
  *   place change flash on the numeral, a hit flash, boost speed lines (a restrained radial
@@ -18,7 +20,7 @@
  * The minimap (ui/minimap.js) mounts its canvas inside #hud; everything in here is DOM.
  * Plain hyphens only in every string.
  */
-import { ensureFonts, CORAL, INK, PAPER, FONT, WIDE, PIX, h, esc, fmtTime, ordinal } from './screens.js?v=r0-20260906043348';
+import { ensureFonts, CORAL, INK, PAPER, FONT, WIDE, PIX, h, esc, fmtTime, ordinal } from './screens.js?v=r1-20260906113009';
 
 export const ITEM_KEYS = ['buoy', 'cannonball', 'crate', 'espresso', 'shield'];
 export const ITEM_NAMES = { buoy: 'Chaser buoy', cannonball: 'Cannonball', crate: 'Spill crate', espresso: 'Espresso', shield: 'Foam shield' };
@@ -43,6 +45,14 @@ export const ITEM_ICONS = {
     <path d="M18 30 q6 6 12 0" stroke="${CORAL}" stroke-width="3" fill="none" stroke-linecap="round"/>`),
   roulette: S(`<rect x="10" y="10" width="28" height="28" fill="none" stroke="${PAPER}" stroke-width="3" stroke-dasharray="6 5"/><rect x="19" y="19" width="10" height="10" fill="${CORAL}"/>`),
 };
+// The empty slot shows our own item box (the glass cube stood on a corner, assets/item_box.js) as an
+// outline with its coral core breathing, so an empty slot reads as "waiting for a box", not a placeholder.
+const EMPTY_ICON = `<svg class="empty" viewBox="0 0 48 48" width="100%" height="100%" aria-hidden="true">
+  <g fill="none" stroke="${PAPER}" stroke-width="2.6" stroke-linejoin="round" opacity=".62">
+    <path d="M24 5.5 L40 14.75 L40 33.25 L24 42.5 L8 33.25 L8 14.75 Z"/><path d="M8 14.75 L24 24 L40 14.75 M24 24 L24 42.5"/>
+  </g>
+  <circle class="core" cx="24" cy="24" r="4.2" fill="${CORAL}"/>
+</svg>`;
 
 const CSS = `
 #hud{position:fixed;inset:0;z-index:10;pointer-events:none;font-family:${FONT};color:${PAPER};font-weight:800;
@@ -58,22 +68,29 @@ const CSS = `
 #hud .pos.up b{color:#9fd8ea;animation:hudpop .55s ease-out}
 #hud .pos.down b{color:${CORAL};animation:hudpop .55s ease-out}
 #hud .pos .lbl{position:absolute;left:0;bottom:-16px;opacity:.8}
-#hud .lap{position:absolute;right:var(--pad);top:var(--padt);text-align:right;line-height:1}
+#hud .tr{position:absolute;right:var(--pad);top:var(--padt);display:flex;flex-direction:column;align-items:flex-end;gap:clamp(16px,2.6vw,26px)}
+#hud .lap{text-align:right;line-height:1}
 #hud .lap .n{font-size:clamp(30px,4.6vw,52px);letter-spacing:-.03em}
 #hud .lap .n i{font-style:normal;color:${CORAL}}
 #hud .lap .n em{font-style:normal;font-size:.55em;opacity:.7;margin-left:2px}
 #hud .lap .lbl{display:block;opacity:.8;margin-bottom:4px}
-#hud .times{position:absolute;right:var(--pad);top:calc(var(--padt) + clamp(64px,9vw,92px));text-align:right;line-height:1.35;font-size:clamp(14px,1.8vw,20px)}
-#hud .times .lbl{display:inline-block;width:5.2em;opacity:.7;text-align:left}
-#hud .times .best{color:#9fd8ea}
-#hud .item{position:absolute;left:50%;top:var(--padt);transform:translateX(-50%);width:clamp(62px,9vw,88px);height:clamp(62px,9vw,88px);
-  box-sizing:border-box;border:3px solid rgba(242,236,226,.32);background:rgba(16,12,10,.2);padding:8px;display:flex;align-items:center;justify-content:center}
-#hud .item::before{content:'';width:34%;height:34%;box-sizing:border-box;border:2px dashed rgba(242,236,226,.3)}
-#hud .item.has::before,#hud .item.spin::before{display:none}
-#hud .item.has{border-color:${CORAL};background:rgba(16,12,10,.5);box-shadow:0 0 0 3px rgba(16,12,10,.4),0 0 22px rgba(237,88,81,.35)}
-#hud .item.spin{background:rgba(16,12,10,.5);border-color:rgba(242,236,226,.7)}
-#hud .item.spin{border-style:dashed}
-#hud .item .lbl{position:absolute;left:50%;bottom:-18px;transform:translateX(-50%);white-space:nowrap;opacity:.85}
+#hud .times{text-align:right;line-height:1;padding-top:9px;border-top:3px solid ${CORAL};min-width:6.6em;font-size:clamp(18px,2.4vw,26px)}
+#hud .times .lbl{display:block;opacity:.7;margin-bottom:4px}
+#hud .times .race{display:block;letter-spacing:-.02em}
+#hud .times .best{margin-top:9px;color:#9fd8ea;font-size:.68em}
+#hud .times .best .bl{display:block}
+#hud .item{position:absolute;left:50%;top:var(--padt);transform:translateX(-50%);width:clamp(66px,9.5vw,92px);height:clamp(66px,9.5vw,92px);
+  box-sizing:border-box;border:3px solid ${PAPER};background:rgba(16,12,10,.74);padding:9px 9px 11px;display:flex;align-items:center;justify-content:center;
+  box-shadow:5px 5px 0 rgba(16,12,10,.6);transition:border-color .15s,background .15s}
+#hud .item::after{content:'';position:absolute;left:-3px;right:-3px;bottom:-3px;height:5px;background:${CORAL}}
+#hud .item svg.empty{opacity:.9}
+#hud .item svg.empty .core{animation:corepulse 2.2s ease-in-out infinite;transform-origin:24px 24px}
+#hud .item.has svg.empty,#hud .item.spin svg.empty{display:none}
+#hud .item.has{border-color:${CORAL};background:rgba(16,12,10,.82);box-shadow:5px 5px 0 rgba(16,12,10,.6),0 0 24px rgba(237,88,81,.4)}
+#hud .item.spin{border-color:${CORAL};background:rgba(16,12,10,.82)}
+#hud .item.spin::after{animation:rulepulse .18s steps(2) infinite}
+#hud .item .lbl{position:absolute;left:50%;bottom:-20px;transform:translateX(-50%);white-space:nowrap;opacity:.75}
+#hud .item.has .lbl{color:${CORAL};opacity:1}
 #hud .item svg{display:block;width:100%;height:100%;filter:drop-shadow(0 2px 0 rgba(16,12,10,.6))}
 #hud .item.pop svg{animation:hudpop .45s ease-out}
 #hud .count{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);font-family:${WIDE};font-weight:900;font-size:clamp(110px,24vw,260px);letter-spacing:-.06em;
@@ -95,8 +112,11 @@ const CSS = `
 @keyframes hudpop{0%{transform:scale(1.35)}100%{transform:scale(1)}}
 @keyframes cnt{0%{opacity:0;transform:translate(-50%,-50%) scale(1.8)}18%{opacity:1;transform:translate(-50%,-50%) scale(1)}75%{opacity:1;transform:translate(-50%,-50%) scale(.96)}100%{opacity:0;transform:translate(-50%,-50%) scale(.9)}}
 @keyframes hitf{0%{opacity:1}100%{opacity:0}}
+@keyframes corepulse{0%,100%{opacity:.55;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+@keyframes rulepulse{0%{opacity:1}100%{opacity:.35}}
 @media (max-width:700px) and (orientation:portrait){
-  #hud .times{top:calc(var(--padt) + 78px);font-size:14px}
+  #hud .tr{gap:14px}
+  #hud .times{font-size:17px;padding-top:7px}
   #hud .pos b{font-size:72px}
 }
 `;
@@ -122,15 +142,18 @@ export class HUD {
     this.lines = add('<div class="lines"></div>');
     this.hitf = add('<div class="hitf"></div>');
     this.posEl = add('<div class="pos"><b>1</b><small>st</small></div>');
-    this.lapEl = add('<div class="lap"><span class="lbl pix">Lap</span><div class="n"><i>1</i><em>/' + esc(laps) + '</em></div></div>');
-    this.timesEl = add('<div class="times"><div><span class="lbl pix">Time</span><span class="race">0:00.000</span></div><div class="best"><span class="lbl pix">Best lap</span><span class="bl">-</span></div></div>');
-    this.itemEl = add('<div class="item"><span class="lbl pix"></span></div>');
+    this.trEl = add('<div class="tr"></div>');
+    this.lapEl = h('<div class="lap"><span class="lbl pix">Lap</span><div class="n"><i>1</i><em>/' + esc(laps) + '</em></div></div>');
+    this.timesEl = h('<div class="times"><div><span class="lbl pix">Time</span><span class="race">0:00.000</span></div><div class="best"><span class="lbl pix">Best lap</span><span class="bl">-</span></div></div>');
+    this.trEl.appendChild(this.lapEl); this.trEl.appendChild(this.timesEl);
+    this.itemEl = add('<div class="item">' + EMPTY_ICON + '<span class="lbl pix"></span></div>');
     this.countEl = add('<div class="count"></div>');
     this.bannerEl = add('<div class="banner"></div>');
     this.roundEl = add(`<div class="round pix">404 GEN <i>${esc(round)}</i></div>`);
     this._pos = 1; this._item = undefined; this._rouT = 0; this._rouI = 0;
     this._bannerT = 0; this._bannerText = null; this._flashT = 0; this._boost = 0;
     this.onBoost = null;             // (t) => void, for post.setSpeedLines
+    this.itemEl.querySelector('.lbl').textContent = 'Item';
     this.setItem(null);
   }
 
@@ -165,11 +188,11 @@ export class HUD {
     this._item = key;
     const lbl = this.itemEl.querySelector('.lbl');
     const setIcon = (k) => {
-      for (const c of [...this.itemEl.children]) if (c.tagName === 'svg') c.remove();
+      for (const c of [...this.itemEl.children]) if (c.tagName === 'svg' && !c.classList.contains('empty')) c.remove();
       if (k && ITEM_ICONS[k]) this.itemEl.insertBefore(h(ITEM_ICONS[k]), lbl);
     };
     this.itemEl.classList.remove('has', 'spin', 'pop');
-    if (!key) { setIcon(null); lbl.textContent = ''; return; }
+    if (!key) { setIcon(null); lbl.textContent = 'Item'; return; }
     if (key === 'roulette') {
       this.itemEl.classList.add('spin');
       lbl.textContent = '';

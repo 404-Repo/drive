@@ -22,10 +22,10 @@
  * against the 40 the lead allowed. Nothing here is baked and nothing uses .clone(true) of a merged asset.
  */
 import * as THREE from 'three';
-import { preloadAssets } from '../../assetlib.js?v=r0-20260906043348';
-import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r0-20260906043348';
-import { Projectiles } from './projectiles.js?v=r0-20260906043348';
-import { Hazards } from './hazards.js?v=r0-20260906043348';
+import { preloadAssets } from '../../assetlib.js?v=r1-20260906113009';
+import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r1-20260906113009';
+import { Projectiles } from './projectiles.js?v=r1-20260906113009';
+import { Hazards } from './hazards.js?v=r1-20260906113009';
 
 export const ITEMS = {
   buoy:       { asset: 'chaser_buoy',  speed: 34, lock: 60, life: 8,  hit: 'spin' },
@@ -48,11 +48,57 @@ export const ITEM_BOX_ROWS = [
   { x: 62, z: 50 }, { x: 65.3, z: 50 }, { x: 68.7, z: 50 }, { x: 72, z: 50 },
   { x: -97, z: 110.5 }, { x: -97, z: 114 }, { x: -97, z: 117.5 },
 ];
+/**
+ * Second, staggered row behind each planned row (round 1 fix for 0 to 3 pickups per 600 m). The plan's
+ * rows are 3 or 4 boxes 3.4 m apart; 8 karts pass a row inside the respawn time, so a mid pack kart met
+ * nothing but gaps. Each row gets a second row SECOND_ROW_GAP m further along the racing direction with
+ * a box in every gap of the first (n - 1 boxes offset by half the spacing), the double stagger the genre
+ * uses. Rows are recognised as anchors within ROW_JOIN m of each other; the along direction is the
+ * spline tangent at the row centre; y stays null so Boxes reads spline.roadY under each new box, and a
+ * box that would leave the ribbon (roadY NaN) is dropped. Without a spline the anchors pass unchanged.
+ */
+export const SECOND_ROW_GAP = 4.5;
+const ROW_JOIN = 6;
+export function staggerRows(anchors, spline) {
+  if (!spline || typeof spline.nearest !== 'function' || typeof spline.tangent !== 'function') return anchors.slice();
+  const rows = [];
+  for (const a of anchors) {
+    let row = rows.find((r) => r.some((b) => Math.hypot(b.x - a.x, b.z - a.z) <= ROW_JOIN));
+    if (!row) { row = []; rows.push(row); }
+    row.push(a);
+  }
+  const out = anchors.slice();
+  const t = new THREE.Vector3();
+  for (const row of rows) {
+    if (row.length < 2) continue;
+    const cx = row.reduce((s, b) => s + b.x, 0) / row.length, cz = row.reduce((s, b) => s + b.z, 0) / row.length;
+    const n = spline.nearest(cx, cz);
+    if (!n || !Number.isFinite(n.progress)) continue;
+    spline.tangent(n.progress, t);
+    const len = Math.hypot(t.x, t.z) || 1;
+    const ax = (t.x / len) * SECOND_ROW_GAP, az = (t.z / len) * SECOND_ROW_GAP;
+    // sort along the row's own axis so the gaps are between neighbours
+    const dx = row[row.length - 1].x - row[0].x, dz = row[row.length - 1].z - row[0].z;
+    const sorted = row.slice().sort((p, q) => (p.x * dx + p.z * dz) - (q.x * dx + q.z * dz));
+    for (let i = 0; i + 1 < sorted.length; i++) {
+      const x = (sorted[i].x + sorted[i + 1].x) / 2 + ax, z = (sorted[i].z + sorted[i + 1].z) / 2 + az;
+      if (typeof spline.roadY === 'function' && !Number.isFinite(spline.roadY(x, z))) continue;
+      out.push({ x, z, y: null, second: true });
+    }
+  }
+  return out;
+}
 export const BOOST_PAD_ANCHORS = [
   { x: -137, z: -100, rot: 180 }, { x: -131, z: -100, rot: 180 }, { x: 60, z: -155.7, rot: 90 }, { x: 64, z: 30, rot: 0 },
   { x: -90, z: 114, rot: 270 }, { x: -102, z: 114, rot: 270 }, { x: -147, z: 27, rot: 165 },
 ];
 
+const LEAVE_ONE_RANGE = 70;   // m: an AI leaves a row's last box for an empty handed racer this close behind
+                              // (covers the 2 s respawn at the 34 m/s top speed, 68 m: a taker just outside the
+                              // range has its box back before the racer behind reaches it)
+const LANE_TOL = 2.0;         // m: an AI also leaves the last standing box within this lateral of the player's lane
+                              // (inside the 2.1 m reach; at 3.5 the kept box sat 2.7 m outside the player's lane
+                              // and the player passed it; the double row has a box every 1.7 m so 2 or 3 qualify)
 const ROULETTE_TIME = 1.2;
 const ROULETTE_TICK = 0.09;
 const _col = new THREE.Color();
@@ -110,6 +156,7 @@ class Effects {
   get drawsNow() { return (this.points.visible ? 1 : 0) + (this.lines.visible ? 1 : 0); }
 
   burst(pos, hex, count = 16, speed = 4, dur = 0.5) {
+    if (!pos || !(Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z))) return;   // a NaN particle draws a black square
     let b = this.bursts.find((x) => x.free);
     if (!b) { b = this.bursts.reduce((o, x) => (x.t / x.dur > o.t / o.dur ? x : o), this.bursts[0]); }
     b.free = false; b.t = 0; b.dur = dur; b.count = Math.min(count, this.perBurst);
@@ -187,9 +234,11 @@ export class ItemSystem {
    * @param pads       level.padAnchors [{ x, y, z, rot }]; falls back to BOOST_PAD_ANCHORS
    * @param positionOf (id) => 1..8 live race position; falls back to a sort by lap + progress
    * @param rng        () => 0..1 for the roulette, Math.random by default
+   * @param playerId   the human's body id (main.js puts the player first in `bodies`, so bodies[0] by default);
+   *                   the AI leave the last standing box of a row when an empty handed racer is close behind
    */
   constructor({ scene, world = null, spline = null, bodies = [], views = new Map(), events = null, tier = null,
-                anchors = null, pads = null, positionOf = null, rng = Math.random, viewShield = 'auto' }) {
+                anchors = null, pads = null, positionOf = null, rng = Math.random, viewShield = 'auto', playerId = undefined }) {
     this.scene = scene;
     this.world = world;
     this.spline = spline;
@@ -200,6 +249,7 @@ export class ItemSystem {
     this.anchors = anchors;
     this.padAnchors = pads;
     this.positionOf = positionOf;
+    this.playerId = playerId !== undefined ? playerId : (bodies.length ? idOf(bodies[0], 0) : 1);
     this.rng = rng;
     this.viewShield = viewShield;
     this.held = new Map();
@@ -230,6 +280,7 @@ export class ItemSystem {
 
     let anchors = this.anchors;
     if (!anchors || !anchors.length) anchors = ITEM_BOX_ROWS.map((r) => ({ x: r.x, z: r.z, y: null }));
+    anchors = staggerRows(anchors, this.spline);   // the level's rows plus a staggered second row each
     let pads = this.padAnchors;
     if (!pads || !pads.length) pads = BOOST_PAD_ANCHORS.map((p) => ({ ...p, y: null }));
 
@@ -243,7 +294,7 @@ export class ItemSystem {
 
     this.boxes = new Boxes({
       scene: this.scene, anchors, bodies: this.bodies, events: this.events, pool: this.pools.item_box, spline: this.spline,
-      onPickup: (body, index) => this.pickup(body, index),
+      onPickup: (body, index, box) => this.pickup(body, index, box),
     });
     this.pads = new Pads({ anchors: pads, bodies: this.bodies, events: this.events });
     const onHit = (target, by, key) => this.onHit(target, by, key);
@@ -299,15 +350,57 @@ export class ItemSystem {
     return k < 0 ? this.bodies.length : k + 1;
   }
 
-  /** Box touched: only a kart holding nothing takes it. */
-  pickup(body, index) {
+  /**
+   * Box touched: only a kart holding nothing takes it, and an AI kart leaves the LAST standing box of a row
+   * when a racer holding nothing is within LEAVE_ONE_RANGE m behind it (the eight karts leave the grid as
+   * one pack and reach the first row inside the respawn time, so without this a mid pack player met only
+   * gaps: round 1 measured 0 to 3 pickups per 600 m). When that racer is the player, the AI also leaves
+   * the last standing box within LANE_TOL m of the player's lane: the pack is within a second of each
+   * other at the first row, and a box left at the far end of the row was passing 4 m outside the player's
+   * 2.1 m reach (round 1 touch run: 1 pickup in 600 m with every box in the player's lane down). The player
+   * is never refused a box.
+   */
+  pickup(body, index, box = null) {
     const id = idOf(body, index);
     if (this.held.get(id)) return false;
+    if (box && id !== this.playerId && this.boxes) {
+      if (this.boxes.liveInRow(box) <= 1 && this.emptyHandedBehind(body, id)) return false;
+      const p = this.playerBehind(body);
+      if (p && this.boxes.liveNearLane(box, p.pos.x, p.pos.z, LANE_TOL) <= 1) return false;
+    }
     this.held.set(id, 'roulette');
     this.roulette.set(id, { t: ROULETTE_TIME, shown: ITEM_KEYS[Math.floor(this.rng() * ITEM_KEYS.length)], tick: 0 });
     this.setHeldView(id, 'roulette');
     this.emit('itemPickup', { id, key: 'roulette' });
     return true;
+  }
+
+  /** True when a live racer other than `id` that holds nothing is within LEAVE_ONE_RANGE m and behind `body`. */
+  emptyHandedBehind(body, id) {
+    const fx = Math.sin(body.heading || 0), fz = Math.cos(body.heading || 0);
+    for (let i = 0; i < this.bodies.length; i++) {
+      const o = this.bodies[i];
+      if (!o || o === body || !o.pos || INERT_STATES.has(o.state)) continue;
+      const oid = idOf(o, i);
+      if (oid === id || this.held.get(oid)) continue;
+      const dx = o.pos.x - body.pos.x, dz = o.pos.z - body.pos.z;
+      if (dx * dx + dz * dz > LEAVE_ONE_RANGE * LEAVE_ONE_RANGE) continue;
+      if (dx * fx + dz * fz < 0) return true;
+    }
+    return false;
+  }
+
+  /** The player's body when the player holds nothing and is within LEAVE_ONE_RANGE m behind `body`, else null. */
+  playerBehind(body) {
+    if (this.held.get(this.playerId)) return null;
+    for (let i = 0; i < this.bodies.length; i++) {
+      const o = this.bodies[i];
+      if (!o || o === body || !o.pos || idOf(o, i) !== this.playerId || INERT_STATES.has(o.state)) continue;
+      const dx = o.pos.x - body.pos.x, dz = o.pos.z - body.pos.z;
+      if (dx * dx + dz * dz > LEAVE_ONE_RANGE * LEAVE_ONE_RANGE) return null;
+      return dx * Math.sin(body.heading || 0) + dz * Math.cos(body.heading || 0) < 0 ? o : null;
+    }
+    return null;
   }
 
   /** The key the HUD shows while the roulette spins (cycles every 90 ms), else the held key. */

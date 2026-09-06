@@ -1,4 +1,6 @@
-// house_corner_shop c0: primitive assembly. Two overlapping wall boxes plus a rotated chamfer
+// house_corner_shop c0 (fix round 1 triangle pass: glass, mullions and louvres are single planes,
+// awning scallops six sided, rib runs at 0.5 m with five segments, balcony posts at 0.25 m, the sign
+// discs at 14 segments; every modelled feature kept). Primitive assembly. Two overlapping wall boxes plus a rotated chamfer
 // plate form the cut corner; ground floor arches are ring archivolts over half cylinder soffits
 // with a dark recess behind; the hip roof over the five sided eave polygon is a hand built
 // BufferGeometry with rib cylinders per face; awnings are striped boxes with cylinder scallops;
@@ -13,6 +15,7 @@ export default function (THREE) {
   const mat = (name, hex, rough, metal, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal || 0 }, extra || {})); if (name) m.name = name; return m; };
   const add = (p, geo, m, x, y, z, rx, ry, rz) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.rotation.set(rx || 0, ry || 0, rz || 0); p.add(o); return o; };
   const box = (p, w, h, d, m, x, y, z, rx, ry, rz) => add(p, new THREE.BoxGeometry(w, h, d), m, x, y, z, rx, ry, rz);
+  const plate = (p, w, h, m, x, y, z, rx, ry, rz) => add(p, new THREE.PlaneGeometry(w, h), m, x, y, z, rx, ry, rz);
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
   const WW = 0xf1e6d2, OCH = 0xe0a862, STN = 0xcdb897, SHD = 0x8d7b63, TER = 0xc4683f, RED = 0xd6402f, TEAL = 0x3f8f8a, MD = 0x3a3f46;
@@ -63,11 +66,11 @@ export default function (THREE) {
     const F = new THREE.Group(); F.position.copy(Mb); F.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, v, n)); g.add(F);
     const wB = A.distanceTo(B), wT = TL.distanceTo(TR), cT = Mt.clone().sub(Mb).dot(u);
     box(F, wB + 0.04, 0.1, 0.2, roofEdge, 0, 0.02, -0.02);
-    for (let s = -wB / 2 + 0.2; s < wB / 2 - 0.1; s += 0.4) {
+    for (let s = -wB / 2 + 0.2; s < wB / 2 - 0.1; s += 0.5) {
       // the longest rib that stays inside the face: solve where the hip lines pass s
       let t = 1; for (let k = 1; k <= 20; k++) { const tt = k / 20, half = (wB + (wT - wB) * tt) / 2, c0 = cT * tt; if (s < c0 - half || s > c0 + half) { t = (k - 1) / 20; break; } }
       const len = Math.max(0.3, t * L - 0.1);
-      add(F, new THREE.CylinderGeometry(0.075, 0.075, len, 6, 1, true), roof, s, len / 2, 0.075);
+      add(F, new THREE.CylinderGeometry(0.075, 0.075, len, 5, 1, true), roof, s, len / 2, 0.075);
     }
   }
   const cap = (a, b) => { const d = b.clone().sub(a); const o = add(g, new THREE.CylinderGeometry(0.1, 0.1, d.length(), 8), roofTop); o.position.copy(a.clone().add(d.clone().multiplyScalar(0.5))); o.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize()); };
@@ -86,7 +89,7 @@ export default function (THREE) {
     if (open) { box(F, w - 0.2, h - 0.1, 0.02, inner, x, y0 + h / 2 - 0.05, -RD + 0.02); box(F, w - 0.1, 0.1, RD, floorM, x, y0 + 0.05, -RD / 2); box(F, 0.05, h - 0.4, RD - 0.2, inner, x - r + 0.16, y0 + h / 2 - 0.2, -RD / 2 - 0.1); box(F, 0.05, h - 0.4, RD - 0.2, inner, x + r - 0.16, y0 + h / 2 - 0.2, -RD / 2 - 0.1); }
     else {
       box(F, w - 0.2, h - 0.2, 0.02, inner, x, y0 + h / 2 - 0.05, -RD + 0.03);
-      box(F, w - 0.24, hs - y0 - 0.4, 0.02, glass, x, (y0 + 0.4 + hs) / 2, -0.12); add(F, new THREE.CircleGeometry(r - 0.12, 12, 0, PI), glass, x, hs, -0.12);
+      plate(F, w - 0.24, hs - y0 - 0.4, glass, x, (y0 + 0.4 + hs) / 2, -0.11); add(F, new THREE.CircleGeometry(r - 0.12, 12, 0, PI), glass, x, hs, -0.11);
       box(F, w - 0.2, 0.1, 0.06, frameM, x, hs - 0.03, -0.1); box(F, 0.08, hs - y0 - 0.4, 0.06, frameM, x, (y0 + 0.4 + hs) / 2, -0.1);
       box(F, w - 0.2, 0.42, 0.1, frameM, x, y0 + 0.21, -0.1); box(F, w - 0.16, 0.05, 0.16, stoneTop, x, y0 + 0.44, -0.08);
     }
@@ -95,20 +98,20 @@ export default function (THREE) {
     const A = new THREE.Group(); A.position.set(x, y, 0); A.rotation.x = 0.3; F.add(A);
     const n = Math.round(w / 0.5);
     for (let i = 0; i < n; i++) box(A, w / n, 0.05, depth, i % 2 ? awnW : awnR, -w / 2 + (i + 0.5) * w / n, 0, depth / 2);
-    for (let i = 0; i < n; i++) add(A, new THREE.CylinderGeometry(w / n / 2, w / n / 2, 0.04, 10, 1, false, PI / 2, PI), i % 2 ? awnW : awnR, -w / 2 + (i + 0.5) * w / n, -0.03, depth, PI / 2, 0, 0);
+    for (let i = 0; i < n; i++) add(A, new THREE.CylinderGeometry(w / n / 2, w / n / 2, 0.04, 6, 1, false, PI / 2, PI), i % 2 ? awnW : awnR, -w / 2 + (i + 0.5) * w / n, -0.03, depth, PI / 2, 0, 0);
     for (const s of [-1, 1]) { box(A, 0.06, 0.06, depth, rail, s * (w / 2 - 0.05), -0.05, depth / 2); }
     for (const s of [-1, 1]) box(F, 0.06, 0.06, depth * 0.9, rail, x + s * (w / 2 - 0.05), y - 0.35, depth * 0.45, -0.32, 0, 0);
   };
   const win = (F, x, y0, w, h, balc) => {
-    box(F, w, h, 0.02, glass, x, y0 + h / 2, 0.01);
+    plate(F, w, h, glass, x, y0 + h / 2, 0.02);
     box(F, w + 0.24, 0.12, 0.08, frameE, x, y0 + h - 0.06, 0.04); box(F, 0.12, h, 0.08, frameE, x - w / 2 - 0.06, y0 + h / 2, 0.04); box(F, 0.12, h, 0.08, frameE, x + w / 2 + 0.06, y0 + h / 2, 0.04);
-    box(F, 0.06, h, 0.05, frameM, x, y0 + h / 2, 0.035); box(F, w, 0.06, 0.05, frameM, x, y0 + h * 0.6, 0.035);
+    plate(F, 0.06, h, frameM, x, y0 + h / 2, 0.06); plate(F, w, 0.06, frameM, x, y0 + h * 0.6, 0.06);
     box(F, w + 0.5, 0.18, 0.12, frameE, x, y0 + h + 0.15, 0.04); box(F, w + 0.54, 0.03, 0.14, stoneTop, x, y0 + h + 0.25, 0.05);
-    for (const s of [-1, 1]) { const sx = x + s * (w / 2 + 0.12 + w / 4 + 0.02); box(F, w / 2 + 0.04, h, 0.06, shut, sx, y0 + h / 2, 0.03); for (let k = 0; k < 3; k++) box(F, w / 2 - 0.06, 0.05, 0.03, shutEdge, sx, y0 + h * (0.2 + k * 0.3), 0.07); }
+    for (const s of [-1, 1]) { const sx = x + s * (w / 2 + 0.12 + w / 4 + 0.02); box(F, w / 2 + 0.04, h, 0.06, shut, sx, y0 + h / 2, 0.03); for (let k = 0; k < 3; k++) plate(F, w / 2 - 0.06, 0.05, shutEdge, sx, y0 + h * (0.2 + k * 0.3), 0.085); }
     if (balc) {
       box(F, w + 0.6, 0.12, 0.45, stone, x, y0 - 0.06, 0.22); box(F, w + 0.64, 0.03, 0.47, stoneTop, x, y0 + 0.01, 0.23);
       for (const s of [-1, 1]) box(F, 0.24, 0.24, 0.4, stoneD, x + s * (w / 2 + 0.1), y0 - 0.22, 0.2);
-      const n = Math.round((w + 0.5) / 0.2);
+      const n = Math.round((w + 0.5) / 0.25);
       for (let i = 0; i <= n; i++) box(F, 0.05, 0.9, 0.05, rail, x - (w + 0.5) / 2 + i * (w + 0.5) / n, y0 + 0.47, 0.4);
       for (const s of [-1, 1]) box(F, 0.05, 0.9, 0.05, rail, x + s * (w + 0.5) / 2, y0 + 0.47, 0.2);
       box(F, w + 0.56, 0.07, 0.07, rail, x, y0 + 0.92, 0.4); box(F, w + 0.56, 0.05, 0.05, rail, x, y0 + 0.3, 0.4);
@@ -127,8 +130,8 @@ export default function (THREE) {
   // hanging disc sign on a bracket at the corner
   box(FC, 0.08, 0.08, 1.2, rail, 0.9, 6.3, 0.6); box(FC, 0.08, 0.5, 0.08, rail, 0.9, 6.05, 0.04); box(FC, 0.06, 0.06, 0.9, rail, 0.9, 5.95, 0.5, -0.4, 0, 0);
   for (const s of [-1, 1]) box(FC, 0.05, 0.3, 0.05, rail, 0.9 + s * 0.2, 6.1, 1.1);
-  add(FC, new THREE.CylinderGeometry(0.5, 0.5, 0.08, 20), signRim, 0.9, 5.45, 1.1, 0, 0, PI / 2);
-  add(FC, new THREE.CylinderGeometry(0.4, 0.4, 0.1, 20), signFace, 0.9, 5.45, 1.1, 0, 0, PI / 2);
+  add(FC, new THREE.CylinderGeometry(0.5, 0.5, 0.08, 14), signRim, 0.9, 5.45, 1.1, 0, 0, PI / 2);
+  add(FC, new THREE.CylinderGeometry(0.4, 0.4, 0.1, 14), signFace, 0.9, 5.45, 1.1, 0, 0, PI / 2);
   // back and left faces: plainer, three windows per floor and a service door
   const FB = face(PI, 0, -H), FL = face(-PI / 2, -H, 0);
   for (const F of [FB, FL]) { for (const x of [-3.0, 0, 3.0]) { win(F, x, 1.2, 1.1, 1.7, false); win(F, x, 4.5, 1.1, 1.8, false); } }

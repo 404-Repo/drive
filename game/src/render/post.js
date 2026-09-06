@@ -27,7 +27,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r0-20260906043348';
+import { getTier } from './quality.js?v=r1-20260906113009';
 
 /** Bloom threshold in linear HDR: lit whitewash measures 0.62 to 0.72 (work/render/NOTES.md), so only brighter pixels bloom. */
 export const BLOOM = { threshold: 0.92, strength: 0.28, radius: 0.35 };
@@ -157,6 +157,10 @@ const BRIGHT_FS = /* glsl */`
 uniform sampler2D tDiffuse; uniform float uThreshold, uKnee; varying vec2 vUv;
 void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
+  // a single NaN or Inf pixel in the scene buffer (a degenerate normal on a clearcoat or a card edge) would
+  // otherwise be spread by the two blurs into a hard edged 80 px black square (round 0 and 1 filmstrips)
+  if (!(c.r == c.r) || !(c.g == c.g) || !(c.b == c.b)) c = vec3(0.0);
+  c = min(c, vec3(256.0));
   float l = max(max(c.r, c.g), c.b);
   float soft = clamp((l - uThreshold + uKnee) / (2.0 * uKnee), 0.0, 1.0);
   soft = soft * soft * uKnee;

@@ -1,4 +1,6 @@
-// house_narrow_tall c0: primitive assembly. Walls, plinth and cornice are boxes; the attic is a
+// house_narrow_tall c0 (fix round 1 triangle pass: glass, mullions, louvres and door strips are
+// single planes, rib runs at 0.5 m with five segments, balcony posts at 0.28 m; every modelled
+// feature kept). Primitive assembly. Walls, plinth and cornice are boxes; the attic is a
 // three sided cylinder prism scaled to the roof pitch; roof slabs are tilted boxes carrying
 // half round rib cylinders as tile runs; the door head and ridge are half cylinders; every
 // facade is built in its own outward facing group so all four sides carry windows.
@@ -12,6 +14,7 @@ export default function (THREE) {
   const mat = (name, hex, rough, metal, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal || 0 }, extra || {})); if (name) m.name = name; return m; };
   const add = (p, geo, m, x, y, z, rx, ry, rz) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.rotation.set(rx || 0, ry || 0, rz || 0); p.add(o); return o; };
   const box = (p, w, h, d, m, x, y, z, rx, ry, rz) => add(p, new THREE.BoxGeometry(w, h, d), m, x, y, z, rx, ry, rz);
+  const plate = (p, w, h, m, x, y, z, rx, ry, rz) => add(p, new THREE.PlaneGeometry(w, h), m, x, y, z, rx, ry, rz);
 
   const WW = 0xf1e6d2, OCH = 0xe0a862, STN = 0xcdb897, SHD = 0x8d7b63, TER = 0xc4683f, RED = 0xd6402f, TEAL = 0x3f8f8a, OLV = 0x7d8b5a, MD = 0x3a3f46;
   const wall = mat('plaster', 0xe9ddc7, 0.82), wallEdge = mat('plaster', WW, 0.8), wallBase = mat('plaster', dark(0xe9ddc7), 0.85);
@@ -49,8 +52,8 @@ export default function (THREE) {
     box(S, W + 2 * OV, 0.1, len, roofTop, 0, 0.0, 0);
     box(S, W + 2 * OV, 0.06, len, roofUnder, 0, -0.08, 0);
     box(S, W + 2 * OV + 0.04, 0.18, 0.1, roofEdge, 0, -0.03, len / 2 - 0.02);
-    const n = Math.floor((W + 2 * OV) / 0.4);
-    for (let i = 0; i <= n; i++) add(S, new THREE.CylinderGeometry(0.075, 0.075, len - 0.1, 6, 1, true), roof, -(W + 2 * OV) / 2 + 0.12 + i * 0.4, 0.09, -0.02, PI / 2, 0, 0);
+    const n = Math.floor((W + 2 * OV) / 0.5);
+    for (let i = 0; i <= n; i++) add(S, new THREE.CylinderGeometry(0.075, 0.075, len - 0.1, 5, 1, true), roof, -(W + 2 * OV) / 2 + 0.12 + i * 0.5, 0.09, -0.02, PI / 2, 0, 0);
     for (let i = 0; i < 6; i++) box(S, 0.12, 0.14, 0.4, roofUnder, (i - 2.5) * (W + 2 * OV - 0.6) / 5, -0.18, len / 2 - 0.3);
   }
   add(g, new THREE.CylinderGeometry(0.16, 0.16, W + 2 * OV, 10, 1, false, 0, PI), roofTop, 0, RIDGE + 0.02, 0, 0, 0, PI / 2);
@@ -63,20 +66,20 @@ export default function (THREE) {
   // facade helpers in a local frame: x across, y up, z out of the wall
   const face = (rotY, px, pz) => { const F = new THREE.Group(); F.position.set(px, 0, pz); F.rotation.y = rotY; g.add(F); return F; };
   const win = (F, x, y0, w, h, shutters) => {
-    box(F, w, h, 0.02, glass, x, y0 + h / 2, 0.01);
+    plate(F, w, h, glass, x, y0 + h / 2, 0.02);
     box(F, w + 0.2, 0.1, 0.08, frameM, x, y0 + h - 0.05, 0.04);
     box(F, w + 0.2, 0.1, 0.08, frameM, x, y0 + 0.05, 0.04);
     box(F, 0.1, h, 0.08, frameM, x - w / 2 - 0.05, y0 + h / 2, 0.04);
     box(F, 0.1, h, 0.08, frameM, x + w / 2 + 0.05, y0 + h / 2, 0.04);
-    box(F, 0.06, h, 0.05, frameM, x, y0 + h / 2, 0.035);
-    box(F, w, 0.06, 0.05, frameM, x, y0 + h * 0.62, 0.035);
+    plate(F, 0.06, h, frameM, x, y0 + h / 2, 0.06);
+    plate(F, w, 0.06, frameM, x, y0 + h * 0.62, 0.06);
     box(F, w + 0.5, 0.12, 0.24, stone, x, y0 - 0.06, 0.08);
     box(F, w + 0.54, 0.03, 0.26, stoneTop, x, y0 + 0.01, 0.09);
     box(F, w + 0.44, 0.16, 0.1, wallEdge, x, y0 + h + 0.12, 0.03);
     if (shutters) for (const s of [-1, 1]) {
       const sx = x + s * (w / 2 + 0.1 + w / 4 + 0.02);
       box(F, w / 2 + 0.04, h, 0.06, shut, sx, y0 + h / 2, 0.03);
-      for (let k = 0; k < 4; k++) box(F, w / 2 - 0.06, 0.06, 0.03, shutEdge, sx, y0 + h * (0.15 + k * 0.23), 0.07);
+      for (let k = 0; k < 4; k++) plate(F, w / 2 - 0.06, 0.06, shutEdge, sx, y0 + h * (0.15 + k * 0.23), 0.085);
     }
   };
   const balcony = (F, x, y0, w, depth) => {
@@ -87,7 +90,7 @@ export default function (THREE) {
     const yR = y0 + 0.2;
     const post = (px, pz, t) => box(F, t, 1.0, t, rail, px, yR + 0.5, pz);
     post(x - w / 2 + 0.05, depth - 0.05, 0.09); post(x + w / 2 - 0.05, depth - 0.05, 0.09);
-    const n = Math.round(w / 0.22);
+    const n = Math.round(w / 0.28);
     for (let i = 1; i < n; i++) post(x - w / 2 + i * (w / n), depth - 0.05, 0.05);
     for (const s of [-1, 1]) { for (let i = 1; i < 4; i++) post(x + s * (w / 2 - 0.05), depth * i / 4, 0.05); }
     box(F, w, 0.08, 0.08, rail, x, yR + 1.0, depth - 0.05);
@@ -99,10 +102,10 @@ export default function (THREE) {
     const rad = w / 2, hs = h - rad;
     box(F, w + 0.32, hs, 0.07, stone, x, hs / 2, 0.035); arch(F, x, hs, rad + 0.16, 0.07, 0.035, stone);
     box(F, w, hs, 0.1, door, x, hs / 2 + 0.02, 0.05); arch(F, x, hs, rad, 0.1, 0.05, door);
-    for (const s of [-1, 1]) box(F, 0.12, hs - 0.5, 0.03, doorEdge, x + s * (w / 4), hs / 2 + 0.05, 0.11);
+    for (const s of [-1, 1]) plate(F, 0.12, hs - 0.5, doorEdge, x + s * (w / 4), hs / 2 + 0.05, 0.125);
     box(F, w, 0.1, 0.06, doorEdge, x, hs - 0.05, 0.11);
     add(F, new THREE.CircleGeometry(rad - 0.08, 12, 0, PI), glass, x, hs + 0.02, 0.11);
-    for (const a of [PI / 4, PI / 2, 3 * PI / 4]) box(F, 0.05, rad - 0.1, 0.03, doorEdge, x + Math.cos(a) * (rad - 0.1) / 2, hs + 0.02 + Math.sin(a) * (rad - 0.1) / 2, 0.12, 0, 0, a - PI / 2);
+    for (const a of [PI / 4, PI / 2, 3 * PI / 4]) plate(F, 0.05, rad - 0.1, doorEdge, x + Math.cos(a) * (rad - 0.1) / 2, hs + 0.02 + Math.sin(a) * (rad - 0.1) / 2, 0.135, 0, 0, a - PI / 2);
     box(F, w + 0.5, 0.12, 0.5, stoneTop, x, 0.06, 0.25);
   };
   const awning = (F, x, y, w, depth) => {

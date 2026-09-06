@@ -1,4 +1,7 @@
-// house_balcony_row c2: a second reading as a heavier masonry house. Walls are cut bands with real
+// house_balcony_row c2 (fix round 1 triangle pass: thin proud strips, louvres, mullions, glass and
+// reveals are single planes instead of twelve triangle boxes, balusters are open four sided frustums
+// at 0.36 m, pots and ridge tiles at lower segment counts; every modelled feature kept).
+// A second reading as a heavier masonry house. Walls are cut bands with real
 // recessed french windows behind each balcony, balconies ride a continuous stone base course on
 // shaped corbels with square tapered balusters, cloths are two panel bent shapes on the line,
 // pots are stacked cylinders, the door sits in a niche under a voussoir arch, the roof is stepped
@@ -13,6 +16,7 @@ export default function (THREE) {
   const mat = (name, hex, rough, metal, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal || 0 }, extra || {})); if (name) m.name = name; return m; };
   const add = (p, geo, m, x, y, z, rx, ry, rz) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.rotation.set(rx || 0, ry || 0, rz || 0); p.add(o); return o; };
   const box = (p, w, h, d, m, x, y, z, rx, ry, rz) => add(p, new THREE.BoxGeometry(w, h, d), m, x, y, z, rx, ry, rz);
+  const plate = (p, w, h, m, x, y, z, rx, ry, rz) => add(p, new THREE.PlaneGeometry(w, h), m, x, y, z, rx, ry, rz);
   const tri = (p, a, b, c, m) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c], 3)); geo.computeVertexNormals(); return add(p, geo, m); };
 
   const WW = 0xf1e6d2, OCH = 0xe0a862, STN = 0xcdb897, SHD = 0x8d7b63, TER = 0xc4683f, TEAL = 0x3f8f8a, OLV = 0x7d8b5a, FOL = 0x4f8a45, MINT = 0x3fc7a0, YEL = 0xf2c230;
@@ -39,7 +43,7 @@ export default function (THREE) {
     const n = 9, cl = len / n;
     for (let i = 0; i < n; i++) { box(S, RW, 0.08, cl + 0.12, roofTop, 0, 0.04 + (i % 2) * 0.012, len / 2 - cl * (i + 0.5) - 0.06); box(S, RW, 0.03, 0.08, roof, 0, 0.1 + (i % 2) * 0.012, len / 2 - cl * i - 0.03); }
     box(S, RW + 0.04, 0.16, 0.08, roofEdge, 0, -0.04, len / 2 + 0.02);
-    for (let x = -RW / 2 + 0.1; x < RW / 2; x += 0.36) add(S, new THREE.CylinderGeometry(0.075, 0.075, 0.3, 6, 1, false), roof, x, 0.11, len / 2 - 0.1, PI / 2, 0, 0);
+    for (let x = -RW / 2 + 0.1; x < RW / 2; x += 0.42) add(S, new THREE.CylinderGeometry(0.075, 0.075, 0.3, 5, 1, true), roof, x, 0.11, len / 2 - 0.1, PI / 2, 0, 0);
     for (let i = 0; i < 6; i++) box(S, 0.12, 0.14, 0.4, roofUnder, (i - 2.5) * (RW - 0.6) / 5, -0.14, len / 2 - 0.3);
   }
   add(g, new THREE.CylinderGeometry(0.17, 0.17, RW, 10, 1, false, 0, PI), roofTop, 0, RIDGE + 0.04, 0, 0, 0, PI / 2);
@@ -54,12 +58,12 @@ export default function (THREE) {
   };
   const win = (F, x, y0, w, h, awn) => {
     const RD = 0.25;
-    box(F, w, h, 0.02, glass, x, y0 + h / 2, -RD);
-    box(F, w + 0.02, 0.06, RD, reveal, x, y0 + h - 0.03, -RD / 2); box(F, 0.06, h, RD, reveal, x - w / 2 + 0.03, y0 + h / 2, -RD / 2); box(F, 0.06, h, RD, reveal, x + w / 2 - 0.03, y0 + h / 2, -RD / 2);
-    box(F, 0.06, h, 0.05, frameM, x, y0 + h / 2, -RD + 0.03); box(F, w - 0.1, 0.06, 0.05, frameM, x, y0 + h * 0.62, -RD + 0.03);
+    plate(F, w, h, glass, x, y0 + h / 2, -RD + 0.01);
+    plate(F, w + 0.02, RD, reveal, x, y0 + h, -RD / 2, PI / 2, 0, 0); plate(F, RD, h, reveal, x - w / 2, y0 + h / 2, -RD / 2, 0, PI / 2, 0); plate(F, RD, h, reveal, x + w / 2, y0 + h / 2, -RD / 2, 0, -PI / 2, 0);
+    plate(F, 0.06, h, frameM, x, y0 + h / 2, -RD + 0.055); plate(F, w - 0.1, 0.06, frameM, x, y0 + h * 0.62, -RD + 0.055);
     box(F, w + 0.4, 0.14, 0.08, wallEdge, x, y0 + h + 0.1, 0.04);
-    for (const s of [-1, 1]) { const sx = x + s * (w / 2 + 0.04 + w / 4); box(F, w / 2 - 0.02, h - 0.04, 0.06, shut, sx, y0 + h / 2, 0.03); box(F, w / 2 - 0.1, 0.05, 0.03, shutEdge, sx, y0 + h * 0.5, 0.07); for (let k = 0; k < 2; k++) box(F, 0.05, h * 0.36, 0.03, shutEdge, sx, y0 + h * (0.27 + k * 0.46), 0.07); }
-    if (awn) { box(F, w + 0.3, 0.06, 0.5, awnW, x, y0 + h + 0.24, 0.25); for (let i = 0; i < 5; i += 2) box(F, (w + 0.3) / 5, 0.03, 0.5, awnO, x - (w + 0.3) / 2 + (i + 0.5) * (w + 0.3) / 5, y0 + h + 0.28, 0.25); box(F, w + 0.32, 0.12, 0.04, awnO, x, y0 + h + 0.19, 0.5); }
+    for (const s of [-1, 1]) { const sx = x + s * (w / 2 + 0.04 + w / 4); box(F, w / 2 - 0.02, h - 0.04, 0.06, shut, sx, y0 + h / 2, 0.03); plate(F, w / 2 - 0.1, 0.05, shutEdge, sx, y0 + h * 0.5, 0.085); for (let k = 0; k < 2; k++) plate(F, 0.05, h * 0.36, shutEdge, sx, y0 + h * (0.27 + k * 0.46), 0.085); }
+    if (awn) { box(F, w + 0.3, 0.06, 0.5, awnW, x, y0 + h + 0.24, 0.25); for (let i = 0; i < 5; i += 2) plate(F, (w + 0.3) / 5, 0.5, awnO, x - (w + 0.3) / 2 + (i + 0.5) * (w + 0.3) / 5, y0 + h + 0.275, 0.25, -PI / 2, 0, 0); box(F, w + 0.32, 0.12, 0.04, awnO, x, y0 + h + 0.19, 0.5); }
     else { box(F, w + 0.44, 0.12, RD + 0.2, stone, x, y0 - 0.06, -RD / 2 + 0.1); box(F, w + 0.48, 0.03, RD + 0.22, stoneTop, x, y0 + 0.015, -RD / 2 + 0.11); }
   };
   const cloths = (F, x0, y, z, n) => {
@@ -67,15 +71,15 @@ export default function (THREE) {
     add(F, new THREE.CylinderGeometry(0.02, 0.02, span, 6), line, x0 + span / 2 - 0.15, y, z, 0, 0, PI / 2);
     for (let i = 0; i < n; i++) { const cx = x0 + 0.3 + i * 0.85; box(F, 0.62, 0.4, 0.04, mats[i % 3], cx, y - 0.2, z - 0.01, 0.12, 0, 0); box(F, 0.62, 0.36, 0.04, mats[i % 3], cx, y - 0.56, z - 0.06, -0.12, 0, 0); box(F, 0.08, 0.1, 0.05, line, cx - 0.25, y - 0.03, z); box(F, 0.08, 0.1, 0.05, line, cx + 0.25, y - 0.03, z); }
   };
-  const potPlant = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.2, 0.17, 0.16, 12), pot, x, y + 0.08, z); add(F, new THREE.CylinderGeometry(0.26, 0.2, 0.22, 12), pot, x, y + 0.27, z); add(F, new THREE.CylinderGeometry(0.3, 0.28, 0.1, 12), potEdge, x, y + 0.43, z); add(F, new THREE.IcosahedronGeometry(0.38, 1), leaf, x, y + 0.74, z); add(F, new THREE.IcosahedronGeometry(0.24, 1), leafTop, x + 0.1, y + 0.96, z - 0.05); };
+  const potPlant = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.2, 0.17, 0.16, 8), pot, x, y + 0.08, z); add(F, new THREE.CylinderGeometry(0.26, 0.2, 0.22, 8), pot, x, y + 0.27, z); add(F, new THREE.CylinderGeometry(0.3, 0.28, 0.1, 8), potEdge, x, y + 0.43, z); add(F, new THREE.IcosahedronGeometry(0.38, 1), leaf, x, y + 0.74, z); add(F, new THREE.IcosahedronGeometry(0.24, 0), leafTop, x + 0.1, y + 0.96, z - 0.05); };
   const balcony = (F, w, y0, depth) => {
     box(F, w, 0.2, depth, stone, 0, y0 + 0.1, depth / 2); box(F, w + 0.04, 0.04, depth + 0.02, stoneTop, 0, y0 + 0.22, depth / 2 + 0.01); box(F, w + 0.04, 0.1, 0.1, stoneTop, 0, y0 + 0.05, depth + 0.03);
     box(F, w + 0.1, 0.16, 0.16, stoneL, 0, y0 - 0.08, 0.08);
     for (let i = 0; i < 4; i++) { const bx = -w / 2 + 0.5 + i * (w - 1.0) / 3; box(F, 0.44, 0.36, depth - 0.24, stoneD, bx, y0 - 0.18, (depth - 0.24) / 2); box(F, 0.44, 0.3, 0.6, stoneD, bx, y0 - 0.5, 0.3); box(F, 0.44, 0.24, 0.3, stoneD, bx, y0 - 0.76, 0.15); }
     box(F, w - 0.1, 0.12, 0.16, rail, 0, y0 + 0.3, depth - 0.1); for (const s of [-1, 1]) box(F, 0.16, 0.12, depth - 0.1, rail, s * (w / 2 - 0.08), y0 + 0.3, (depth - 0.1) / 2);
-    const yR = y0 + 0.36, n = Math.round(w / 0.3);
-    for (let i = 0; i <= n; i++) { const bx = -w / 2 + 0.08 + i * (w - 0.16) / n; add(F, new THREE.CylinderGeometry(0.055, 0.08, 0.5, 4), rail, bx, yR + 0.25, depth - 0.1, 0, PI / 4, 0); box(F, 0.13, 0.06, 0.13, rail, bx, yR + 0.53, depth - 0.1); }
-    for (const s of [-1, 1]) for (let i = 1; i < 4; i++) { add(F, new THREE.CylinderGeometry(0.055, 0.08, 0.5, 4), rail, s * (w / 2 - 0.08), yR + 0.25, depth * i / 4, 0, PI / 4, 0); box(F, 0.13, 0.06, 0.13, rail, s * (w / 2 - 0.08), yR + 0.53, depth * i / 4); }
+    const yR = y0 + 0.36, n = Math.round(w / 0.36);
+    for (let i = 0; i <= n; i++) { const bx = -w / 2 + 0.08 + i * (w - 0.16) / n; add(F, new THREE.CylinderGeometry(0.06, 0.085, 0.56, 4, 1, true), rail, bx, yR + 0.28, depth - 0.1, 0, PI / 4, 0); }
+    for (const s of [-1, 1]) for (let i = 1; i < 4; i++) { add(F, new THREE.CylinderGeometry(0.06, 0.085, 0.56, 4, 1, true), rail, s * (w / 2 - 0.08), yR + 0.28, depth * i / 4, 0, PI / 4, 0); }
     box(F, w, 0.1, 0.16, rail, 0, yR + 0.61, depth - 0.1); box(F, w + 0.02, 0.03, 0.18, railTop, 0, yR + 0.675, depth - 0.1);
     for (const s of [-1, 1]) { box(F, 0.16, 0.1, depth - 0.1, rail, s * (w / 2 - 0.08), yR + 0.61, (depth - 0.1) / 2); box(F, 0.18, 0.03, depth - 0.1, railTop, s * (w / 2 - 0.08), yR + 0.675, (depth - 0.1) / 2); }
     cloths(F, -w / 2 + 1.0, yR + 0.62, depth - 0.34, 3);
@@ -84,7 +88,7 @@ export default function (THREE) {
   const nicheDoor = (F, x, w, h) => {
     const RD = 0.3, rad = w / 2, hs = h - rad;
     box(F, w, hs, 0.08, door, x, hs / 2, -RD + 0.04); add(F, new THREE.CylinderGeometry(rad, rad, 0.08, 12, 1, false, -PI / 2, PI), door, x, hs, -RD + 0.04, -PI / 2, 0, 0);
-    for (const s of [-1, 1]) { box(F, 0.1, hs - 0.4, 0.03, doorEdge, x + s * 0.25, hs / 2, -RD + 0.09); box(F, 0.06, hs + rad, RD, reveal, x + s * (w / 2 + 0.03), (hs + rad) / 2, -RD / 2); }
+    for (const s of [-1, 1]) { plate(F, 0.1, hs - 0.4, doorEdge, x + s * 0.25, hs / 2, -RD + 0.105); box(F, 0.06, hs + rad, RD, reveal, x + s * (w / 2 + 0.03), (hs + rad) / 2, -RD / 2); }
     const nv = 9; for (let i = 0; i < nv; i++) { const a = PI * (i + 0.5) / nv, rr = rad + 0.22; box(F, 0.34, 0.36, 0.14, i % 2 ? stone : stoneM, x + Math.cos(a) * rr, hs + Math.sin(a) * rr, 0.06, 0, 0, a - PI / 2); }
     for (const s of [-1, 1]) box(F, 0.3, hs, 0.12, s > 0 ? stone : stoneM, x + s * (w / 2 + 0.2), hs / 2, 0.06);
     box(F, w + 0.5, 0.12, 0.5, stoneTop, x, 0.06, 0.25);

@@ -2,9 +2,14 @@
  * DRIVE  src/render/sky.js  (owner: render)
  *
  * The sky is the Atlas panorama (sky/sky_pano_2048.webp on the high tier, 1024 on the phone), an
- * equirect generated through Atlas ae7fa487 with the prompt in docs/TRACK-PLAN.md section 9 and
- * remapped offline (work/render/skyprep.py) so the horizon is the middle row and the sun sits at
- * azimuth 250 elevation 14, the seam blended with a 12 percent mirrored crossfade. Drawn on a far
+ * equirect generated through Atlas ae7fa487. Round 1 (fix1_render, critic item 6: "replace the flat
+ * pale gradient sky with blob clouds by a stylised cumulus panorama whose clouds have a warm lit top
+ * and a cool shaded base") replaced round 0's clear sky with a ring of cartoon cumulus low over the
+ * sea, cream lit tops and lavender grey bases (work/fix1_render/gensky_e.py candidate f, remapped by
+ * work/fix1_render/skyprep2.py: the painted horizon warped to the middle row, the painted sun disc
+ * inpainted because the rig draws its own disc at elevation 14 while the picture's sat on the
+ * horizon, the glow rolled to azimuth 250, the seam blended with a 12 percent mirrored crossfade).
+ * Drawn on a far
  * sphere pinned to the far plane so it is always behind everything; the panorama's decoded sRGB is
  * scaled by SKY_GAIN into linear radiance and pushed through the renderer's ACES curve like every
  * other pixel.
@@ -27,8 +32,8 @@
  *   const sky = await createSky(THREE, { scene, renderer, tier });
  *   sky.update(camera, dt);   per frame
  */
-import { sunDirection, SUN_COLOR, SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG, ATMOS_UNIFORMS_GLSL, ATMOS_GLSL, atmosUniforms, applyAtmosFit } from './lighting.js?v=r0-20260906043348';
-import { getTier } from './quality.js?v=r0-20260906043348';
+import { sunDirection, SUN_COLOR, SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG, ATMOS_UNIFORMS_GLSL, ATMOS_GLSL, atmosUniforms, applyAtmosFit } from './lighting.js?v=r1-20260906113009';
+import { getTier } from './quality.js?v=r1-20260906113009';
 
 /** Linear radiance = decoded panorama x SKY_GAIN. Solved so the sky band at 35 degrees lands near the bar's 185 to 205 sRGB luma. */
 export const SKY_GAIN = 1.05;
@@ -215,11 +220,13 @@ function fitAtmos(image, gain) {
     }
     return [r / n * gain, g / n * gain, b / n * gain];
   };
-  const away = [70, 110, 180, -110, -70].map((d) => SUN_AZIMUTH_DEG + d);
+  // nine azimuths 60 to 300 degrees from the sun, the MEDIAN per channel: the round 1 panorama carries a
+  // ring of cumulus between 5 and 40 degrees up, and a mean would let a cream cloud top at one azimuth
+  // pull the low and mid stops (the aerial perspective colour) toward grey
+  const away = [60, 90, 120, 150, 180, -150, -120, -90, -60].map((d) => SUN_AZIMUTH_DEG + d);
   const avg = (el, rad) => {
-    const acc = [0, 0, 0];
-    for (const a of away) { const s = sample(a, el, rad); acc[0] += s[0]; acc[1] += s[1]; acc[2] += s[2]; }
-    return acc.map((x) => +(x / away.length).toFixed(4));
+    const cols = away.map((a) => sample(a, el, rad));
+    return [0, 1, 2].map((i) => { const v = cols.map((c) => c[i]).sort((p, q) => p - q); return +v[(v.length - 1) >> 1].toFixed(4); });
   };
   const fit = {
     horizon: avg(1.0, 1), low: avg(12, 2), mid: avg(35, 3), high: avg(55, 3), zenith: avg(85, 3),

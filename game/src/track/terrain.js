@@ -20,7 +20,7 @@
  * aPaint (0 grass, 1 sand, 2 cobble, 3 rock, 4 asphalt; asphalt also weights the cobble channel).
  */
 import * as THREE from 'three';
-import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r0-20260906043348';
+import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r1-20260906113009';
 
 export const TERRAIN_SPEC = {
   bounds: { minX: -210, maxX: 200, minZ: -190, maxZ: 180 },
@@ -46,7 +46,7 @@ export const TERRAIN_SPEC = {
   extraPads: [],   // the level may pass house pads here: { x0, x1, z0, z1, y, surface }
   flatten: { extra: 4.0, blend: 6.0, beachExtra: 2.1, beachBlend: 5.0, beachWp: [53, 58], underRoad: -0.03, underPavement: -0.02 },
   terraces: { x0: -110, x1: 40, z0: -150, z1: -30, step: 3, edgeMetres: 1.0 },
-  paint: { grass: 0x9aa64a, sand: 0xe6cf9c, cobble: 0x9a8f80, rock: 0xcdb897, rockShade: 0x8d7b63, asphalt: 0x4d5058 },
+  paint: { grass: 0x9aa64a, sand: 0xe6cf9c, cobble: 0xa39f99, rock: 0xcdb897, rockShade: 0x8d7b63, asphalt: 0x65686e },   // cobble and asphalt match road.js PALETTE (round 1: warm grey paving)
   rockSlopeDeg: 40,
   block: 30,
 };

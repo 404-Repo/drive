@@ -22,15 +22,24 @@
  *                         mat3 from instanceMatrix), under its own program cache key. An idle pool (nothing
  *                         acquired) is invisible, so it costs no draw at all.
  *
- * Boxes: 14 spinning bobbing item_box instances at the level's anchors, 1.4 m pickup radius, 4 s
- * respawn, standing on one corner as they float 0.5 m above the road. Pads: 3 x 4 m trigger volumes
+ * Boxes: spinning bobbing item_box instances at the level's anchors (plus the staggered second row
+ * items.js adds behind each row), standing on one corner as they float 0.5 m above the road. A box is
+ * taken when the kart's BODY touches it: box radius 1.4 m plus the kart half width (KART.radius 0.7 m,
+ * or the body's own `radius`), so 2.1 m from the box centre. Respawn 2.0 s after a pickup (round 1: at
+ * 4 s the pack ahead stripped every row and the player found nothing but gaps, 0 to 3 pickups in 600 m).
+ * Boxes within ROW_RADIUS m of each other form a row (`row` on each box); `liveInRow(box)` counts the
+ * row's standing boxes so items.js can keep the last one for an empty handed racer close behind, and
+ * `liveNearLane(box, x, z, tol)` counts the row's standing boxes within tol m of the lane a kart at (x, z)
+ * is in (lateral across the road, from the spline normal at the row centre) so items.js can keep one
+ * IN THE PLAYER'S LANE: the whole pack reaches the first row inside a second of each other, and a box
+ * left at the far end of the row is no use to a kart 2.1 m wide. Pads: 3 x 4 m trigger volumes
  * at the level's pad anchors, applyBoost(9, 1.4) with a 0.5 s per kart re trigger lock. The pad
  * asset itself is placed and baked by the level; only the trigger lives here.
  */
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { ASSET } from '../../assetlib.js?v=r0-20260906043348';
-import { applyMaterials } from '../render/materials.js?v=r0-20260906043348';
+import { ASSET } from '../../assetlib.js?v=r1-20260906113009';
+import { applyMaterials } from '../render/materials.js?v=r1-20260906113009';
 
 const HIDDEN = new THREE.Matrix4().makeScale(1e-6, 1e-6, 1e-6).setPosition(0, -1000, 0);
 const _m = new THREE.Matrix4(), _im = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -224,6 +233,7 @@ export function idOf(body, index = 0) {
   return body && body.id !== undefined && body.id !== null ? body.id : index;
 }
 
+const ROW_RADIUS = 12;   // m: boxes closer than this belong to one row (a planned row plus its staggered second row)
 const CORNER_TILT = Math.atan(Math.SQRT2);   // a cube standing on a vertex: 54.74 degrees about X after 45 about Z
 const _tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(CORNER_TILT, 0, Math.PI / 4, 'ZYX'));
 const _spin = new THREE.Quaternion();
@@ -234,19 +244,21 @@ export class Boxes {
    * @param anchors  Array<{ x, y, z }> from level.itemBoxAnchors. level/build.js hands the box BASE height
    *                 (road under the anchor plus 0.5 m); a raw road height (within 0.3 m of spline.roadY) or a
    *                 null y gets the 0.5 m float added here, so both conventions land the box 0.5 m up.
-   * @param onPickup (body) => boolean   true when the kart took the box (it held nothing)
+   * @param onPickup (body, index, box) => boolean   true when the kart took the box (it held nothing and
+   *                 was allowed the box); box is the entry of `boxes` with x, z, base, row, down, scale
    *
    * The asset is a 1 m cube with its base at y = 0. If it arrives upright (height about 1 m) it is stood
    * on a corner here; if the asset already stands on a corner (height about 1.73 m) it is used as it is.
    */
   constructor({ scene, anchors = [], bodies = [], events = null, pool = null, spline = null, onPickup = null,
-                radius = 1.4, respawn = 4, floatHeight = 0.5, spinRate = 1.6 }) {
+                radius = 1.4, kartRadius = 0.7, respawn = 2.0, floatHeight = 0.5, spinRate = 1.6 }) {
     this.scene = scene;
     this.bodies = bodies;
     this.events = events;
     this.pool = pool || new InstancePool(null, anchors.length, { name: 'item_box' });
     this.onPickup = onPickup;
-    this.radius = radius;
+    this.radius = radius;           // the box's own reach from its centre
+    this.kartRadius = kartRadius;   // added per body (body.radius when it has one): the body touching the box counts
     this.respawn = respawn;
     this.spinRate = spinRate;
     this.time = 0;
@@ -263,8 +275,57 @@ export class Boxes {
       else if (Number.isFinite(given)) base = given;            // off the ribbon: trust the level's height
       else if (Number.isFinite(ry)) base = ry + floatHeight;
       else base = floatHeight;
-      return { x: a.x, z: a.z, base, slot: this.pool.acquire(), phase: i * 0.7, spin: i * 0.9, down: 0, scale: 1 };
+      return { x: a.x, z: a.z, base, row: -1, slot: this.pool.acquire(), phase: i * 0.7, spin: i * 0.9, down: 0, scale: 1 };
     });
+    // rows: a box joins the row of the first box within ROW_RADIUS of it (both planned rows and the staggered second rows)
+    let rows = 0;
+    for (const b of this.boxes) {
+      const near = this.boxes.find((o) => o.row >= 0 && Math.hypot(o.x - b.x, o.z - b.z) <= ROW_RADIUS);
+      b.row = near ? near.row : rows++;
+    }
+    this.rows = rows;
+    // each row's lateral axis (unit, across the road) and centre, so a kart's lane can be compared with a box's:
+    // the spline normal at the row centre when there is a spline, else the line through the row's outermost boxes
+    this.rowAxes = [];
+    for (let r = 0; r < rows; r++) {
+      const members = this.boxes.filter((b) => b.row === r);
+      const cx = members.reduce((s, b) => s + b.x, 0) / members.length, cz = members.reduce((s, b) => s + b.z, 0) / members.length;
+      let ax = NaN, az = NaN;
+      if (spline && typeof spline.nearest === 'function' && typeof spline.at === 'function') {
+        const n = spline.nearest(cx, cz);
+        const q = n && Number.isFinite(n.progress) ? spline.at(n.progress) : null;
+        if (q && Number.isFinite(q.nx) && Number.isFinite(q.nz)) { ax = q.nx; az = q.nz; }
+      }
+      if (!Number.isFinite(ax)) {
+        let far = members[0], fd = -1;
+        for (const b of members) { const d = Math.hypot(b.x - cx, b.z - cz); if (d > fd) { fd = d; far = b; } }
+        const len = Math.hypot(far.x - cx, far.z - cz) || 1;
+        ax = (far.x - cx) / len; az = (far.z - cz) / len;
+      }
+      this.rowAxes.push({ cx, cz, ax, az });
+      for (const b of members) b.lat = (b.x - cx) * ax + (b.z - cz) * az;
+    }
+  }
+
+  /** Lateral (m across the road) of world (x, z) in the frame of `box`'s row. */
+  lateralOf(box, x, z) {
+    const a = this.rowAxes[box.row];
+    return a ? (x - a.cx) * a.ax + (z - a.cz) * a.az : 0;
+  }
+
+  /** Standing boxes in the row of `box` within `tol` m (lateral) of the lane a kart at (x, z) is in, `box` included. */
+  liveNearLane(box, x, z, tol = 3.5) {
+    const lat = this.lateralOf(box, x, z);
+    let n = 0;
+    for (const b of this.boxes) if (b.row === box.row && !(b.down > 0) && Math.abs(b.lat - lat) <= tol) n++;
+    return n;
+  }
+
+  /** Standing boxes (not down; a box popping back in counts) in the row of `box`, `box` itself included. */
+  liveInRow(box) {
+    let n = 0;
+    for (const b of this.boxes) if (b.row === box.row && !(b.down > 0)) n++;
+    return n;
   }
 
   update(dt) {
@@ -294,14 +355,16 @@ export class Boxes {
         _m.multiply(_centre);
       }
       this.pool.set(b.slot, _m);
-      if (b.scale < 1) continue;
+      // a box is takeable the moment it is back: the 0.3 s pop in is cosmetic (round 1: the pop in
+      // added to the 2 s respawn was exactly the window a kart 50 m behind the taker arrived in)
       for (let i = 0; i < this.bodies.length; i++) {
         const body = this.bodies[i];
         if (!body || !body.pos || INERT_STATES.has(body.state)) continue;
         const dx = body.pos.x - b.x, dz = body.pos.z - b.z;
-        if (dx * dx + dz * dz > this.radius * this.radius) continue;
+        const reach = this.radius + (Number.isFinite(body.radius) ? body.radius : this.kartRadius);
+        if (dx * dx + dz * dz > reach * reach) continue;
         if (Math.abs(body.pos.y - b.base) > 2.5) continue;
-        if (this.onPickup && !this.onPickup(body, i)) continue;
+        if (this.onPickup && !this.onPickup(body, i, b)) continue;
         b.down = this.respawn;
         this.pool.hide(b.slot);
         this.taken++;

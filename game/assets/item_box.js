@@ -68,8 +68,8 @@ export default function (THREE) {
   // Core 0.36 m across with a halo.
   const coreJ = new THREE.Group(); coreJ.name = 'item_box_core';
   cube.add(coreJ);
-  coreJ.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 20, 14), core));
-  coreJ.add(new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), halo));
+  coreJ.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), core));    // 12 x 8 (was 20 x 14): 29 boxes in the game, the core sits behind the panes
+  coreJ.add(new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 7), halo));    // 10 x 7 (was 16 x 12): a 25 percent opacity halo
 
   // Stand on the corner: the (1,1,1) diagonal becomes vertical; then turn 30 degrees so
   // both x and z sit 15 degrees off a hexagon corner and the plan silhouette is equal

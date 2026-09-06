@@ -90,6 +90,8 @@ export const NO_COLLIDER = new Set(['kerb_module', 'boost_pad', 'bunting_run', '
 export const DENSITY_ASSETS = new Set(['spectator_group', 'bougainvillea_card', 'agave_cluster', 'rock_boulder', 'deck_chair']);
 
 export const SINK = 0.04;
+/** chevron boards on a pavement are turned this many degrees toward the road so a kart slides off them (round 1) */
+export const CHEVRON_TURN = 40;
 export const SEA_LEVEL = -1.4;
 export const SEED = 17;
 
@@ -194,9 +196,14 @@ export function roadYNear(x, z) {
 export function roadside(s, side, offset) {
   const sm = atDistance(s);
   const [rx, rz] = rightOf(sm.tx, sm.tz);
+  // rotFaceBackToward(deg): faces the approaching karts but turned `deg` toward the road, so the road side end
+  // of the object is upstream. A kart on the pavement that hits it slides along the face back onto the road
+  // instead of stopping against a face square to its travel (round 1 wedge fix, chevron boards)
+  const toRoad = [-rx * side, -rz * side];
+  const rotFaceBackToward = (deg) => { const a = deg / DEG, ca = Math.cos(a), sa = Math.sin(a); return facing(-sm.tx * ca + toRoad[0] * sa, -sm.tz * ca + toRoad[1] * sa); };
   return { x: sm.x + rx * side * offset, z: sm.z + rz * side * offset, sm,
     rotFaceRoad: facing(-rx * side, -rz * side), rotFaceAway: facing(rx * side, rz * side),
-    rotAlong: alongRoad(sm.tx, sm.tz), rotFaceBack: facing(-sm.tx, -sm.tz), rotFaceAhead: facing(sm.tx, sm.tz) };
+    rotAlong: alongRoad(sm.tx, sm.tz), rotFaceBack: facing(-sm.tx, -sm.tz), rotFaceAhead: facing(sm.tx, sm.tz), rotFaceBackToward };
 }
 
 // ------------------------------------------------------------------------------------ helpers
@@ -259,6 +266,7 @@ export const ITEM_BOXES = [
   { x: 0, z: -162.5, y: null }, { x: 0, z: -159, y: null }, { x: 0, z: -155.5, y: null },
   { x: 62, z: 50, y: null }, { x: 65.3, z: 50, y: null }, { x: 68.7, z: 50, y: null }, { x: 72, z: 50, y: null },
   { x: -97, z: 110.5, y: null }, { x: -97, z: 114, y: null }, { x: -97, z: 117.5, y: null },
+  { x: 110, z: -95.4, y: null }, { x: 110, z: -92, y: null }, { x: 110, z: -88.6, y: null },   // R5 piazza exit street (round 1, items request: the R2 to R3 gap was 390 m)
 ];
 export const BOOST_PADS = [
   { x: -137, z: -100, rot: 180 }, { x: -131, z: -100, rot: 180 }, { x: 60, z: -155.7, rot: 90 }, { x: 64, z: 30, rot: 0 },
@@ -332,14 +340,19 @@ function genHarbour(rng) {
   });
   // palms on the pavement with a small lean, lamps on the quay side coping
   for (let i = 0; i < 9; i++) out.push(P('palm_tall', -125.8, -12 * i, rng() * 360, { tag: 'quay_palm', tilt: 3 + 5 * rng() }));
-  for (let i = 0; i < 9; i++) out.push(P('street_lamp', -140, -6 - 12 * i, 90, { tag: 'quay_lamp' }));
+  // lamps at the quay wall's foot (round 1: the plan's x -140 stood 1 m INSIDE the 14 m road's west edge at -141; the
+  // touch gate's kart, hugging the left, met one head on at (-140.7, -99) and lost 1.3 s against it)
+  for (let i = 0; i < 9; i++) out.push(P('street_lamp', -141.3, -6 - 12 * i, 90, { tag: 'quay_lamp' }));
   // grandstand on its pad facing the road (west), flag poles and tyre walls on the coping (long axis along the quay)
   out.push(P('grandstand_small', -111, -60, 270, { tag: 'quay_grandstand' }));
   for (const z of [-50, -56, -62, -68, -74, -80]) out.push(P('race_flag_pole', -140, z, 180, { tag: 'quay_flags' }));
   for (const [x, z] of [[-125, -50], [-125, -70], [-125, -90], [-125, 4]]) out.push(P('spectator_group', x, z, 270, { tag: 'quay_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } }));
-  out.push(P('pit_toolcart', -130, -3, 180, { tag: 'grid_carts' }));
-  out.push(P('pit_toolcart', -136, -3, 180, { tag: 'grid_carts' }));
-  for (const z of [-36, -32, -28, -24]) out.push(P('tyre_wall', -140, z, 90, { tag: 'quay_tyres' }));
+  // pit carts on the pavement beside the grid tail (round 1: the plan's (-130, -3) and (-136, -3) were ON the
+  // quay road, 4 m off the centreline, in the racing line of every lap after the first)
+  out.push(P('pit_toolcart', -125.7, -6.5, 270, { tag: 'grid_carts' }));
+  out.push(P('pit_toolcart', -125.7, -8.6, 270, { tag: 'grid_carts' }));
+  // the start straight's water side tyre walls at the wall's foot, between the bollards, off the road edge (same round 1 reason)
+  for (const z of [-37, -31, -25, -19]) out.push(P('tyre_wall', -141.5, z, 90, { tag: 'quay_tyres' }));
   return out;
 }
 
@@ -400,7 +413,7 @@ function genMarketAndLowerStreet(rng) {
   // chevron boards on the outside (north) of the right hand S bend, facing the approaching karts
   for (const x of [-12, 8]) {
     const n = nearest(x, -158), r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4);
-    out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBack, { tag: 'chevrons_c' }));
+    out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_c' }));
   }
   // flag poles on the south pavement every 22 m
   for (let i = 0; i < 8; i++) {
@@ -460,7 +473,7 @@ function genPiazza(rng) {
     void r;
   }
   for (const [x, z] of [[163, -136], [165, -128], [165, -120], [163, -112], [158, -104], [150, -98]]) { const n = nearest(x, z); out.push(P('tyre_wall', x, z, alongRoad(n.sample.tx, n.sample.tz), { tag: 'hairpin_tyres' })); }
-  [[162, -146, 240], [167, -132, 270], [166, -114, 300], [155, -100, 330]].forEach(([x, z, rot]) => out.push(P('sign_chevron_board', x, z, rot, { tag: 'chevrons_d' })));
+  for (const [x, z] of [[162, -146], [167, -132], [166, -114], [155, -100]]) { const n = nearest(x, z), r = roadside(n.s, -1, 0); out.push(P('sign_chevron_board', x, z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_d' })); }
   out.push(P('cafe_terrace', 128, -136, 20, { tag: 'piazza_cafe' }));
   out.push(P('cafe_terrace', 142, -112, 200, { tag: 'piazza_cafe' }));
   for (const [x, z] of [[122, -136], [150, -136], [122, -112], [150, -112]]) out.push(P('palm_tall', x, z, rng() * 360, { tag: 'piazza_palm', tilt: 2 + 4 * rng() }));
@@ -499,7 +512,7 @@ function genRise(rng) {
   // chicane furniture
   for (const [x, z] of [[80, -22], [80, -16], [50, 18], [50, 24]]) { const n = nearest(x, z); out.push(P('tyre_wall', x, z, alongRoad(n.sample.tx, n.sample.tz), { tag: 'chicane_tyres' })); }
   // chevron boards before the right hand bend of the chicane on its outside (east), facing the approaching karts
-  for (const z of [-38, -33, -28, -23]) { const n = nearest(74, z); const r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBack, { tag: 'chevrons_f' })); }
+  for (const z of [-38, -33, -28, -23]) { const n = nearest(74, z); const r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_f' })); }
   for (const [x, z] of [[50, -30], [78, 10], [52, 40]]) { const n = nearest(x, z); out.push(P('spectator_group', x, z, facing(n.sample.x - x, n.sample.z - z), { tag: 'crowd_f', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
   for (let i = 0; i < 4; i++) { const s = sF0 + 10 + 25 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.9); out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_f' })); }
   void sF1;
@@ -631,9 +644,9 @@ function genCliff(rng) {
   for (const [x, z] of [[60, 92], [48, 102], [34, 110], [18, 116]]) { const n = nearest(x, z); out.push(P('race_flag_pole', x, z, alongRoad(n.sample.tx, n.sample.tz), { tag: 'flags_g' })); }
   // chevron boards: four before the cliff entry corner (right hander), two before the descent corner (right hander), outside = left
   const sG = T.wpS[40];
-  for (let i = 0; i < 4; i++) { const s = sG - 34 + 9 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBack, { tag: 'chevrons_g' })); }
+  for (let i = 0; i < 4; i++) { const s = sG - 34 + 9 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_g' })); }
   const sI = T.wpS[50];
-  for (let i = 0; i < 2; i++) { const s = sI - 24 + 10 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBack, { tag: 'chevrons_i' })); }
+  for (let i = 0; i < 2; i++) { const s = sI - 24 + 10 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_i' })); }
   for (const [x, z] of [[0, 122], [-110, 124]]) out.push(P('spectator_group', x, z, 0, { tag: 'crowd_h', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } }));
   return out;
 }
@@ -685,6 +698,50 @@ function genLighthouseAndBeach(rng) {
   return out;
 }
 
+/**
+ * Round 1 skyline (critic item 5: "cliff and promenade frames have a bald grass ridge or a flat sea horizon;
+ * add the lighthouse, a church tower, a headland, harbour cranes and tall palms so far silhouettes exist at
+ * three depths and pale with distance"). Everything here is an existing asset on the terrain (y null) except
+ * the pines whose feet stand inside the headland rock mass (absolute y, like the cliff rows). Where and why,
+ * with the terrain heights read from the build (work/fix1_level/heights.json):
+ *   - the harbour mouth headland: the flat grass spit north of the north quay wall (x -206..-150, z -140..-168,
+ *     y 0.2 to 0.6) was bare, so the quay frames (progress 0.03 to 0.10, looking north) had a flat sea horizon:
+ *     a two row arc of rock_cliff_module, pines on top, palms and two davits along the north quay, one sea stack
+ *     off the point. 70 to 100 m from the harbour straight: the far layer of the promenade frames.
+ *   - the fish market: three tall palms among the stalls and two pines behind the pad (y 0.9 to 1.9), 30 to 40 m
+ *     from the market corner where the skyline was the stall roofs and one lamp.
+ *   - the hairpin hills: the ground south east of the hairpin rises to 21 m (road 10) and north of it to 17 m,
+ *     both bare grass in every hairpin and lower street frame: pines and palms on both.
+ *   - the rise's east hill (x 100..125, y 18 to 26, road 13 to 20): a second, higher rank of pines and palms
+ *     behind the four the plan put on the terrace at x 86..92, so the rise frames get crowns at two depths.
+ */
+function genSkyline(rng) {
+  const out = [];
+  const pine = (x, z, tag, extra = {}) => out.push(P('pine_umbrella', x, z, rng() * 360, Object.assign({ tag }, extra)));
+  const palm = (x, z, tag) => out.push(P('palm_tall', x, z, rng() * 360, { tag, tilt: 2 + 5 * rng() }));
+  // 1. harbour mouth headland
+  const ridge = [[-158, -149], [-166, -153], [-174, -157], [-182, -160], [-190, -162], [-198, -164], [-206, -167]];
+  for (const [x, z] of ridge) out.push(P('rock_cliff_module', x, z, facing(-168 - x, -118 - z) + (rng() - 0.5) * 16, { tag: 'headland_rock' }));
+  for (const [x, z] of [[-170, -160], [-186, -164], [-201, -170]]) out.push(P('rock_cliff_module', x, z, facing(-168 - x, -118 - z) + (rng() - 0.5) * 16, { tag: 'headland_rock_upper', y: 4.6 }));
+  for (const [x, z] of [[-177, -163], [-193, -166], [-163, -157]]) pine(x, z, 'headland_pine', { y: 4.4 });
+  for (const [x, z] of [[-152, -138.5], [-171, -139], [-189, -138.5]]) palm(x, z, 'north_quay_palm');
+  out.push(P('harbour_davit', -161, -135.5, 0, { tag: 'north_quay_davit' }));
+  out.push(P('harbour_davit', -181, -135.5, 0, { tag: 'north_quay_davit' }));
+  out.push(P('rock_sea_stack', -207, -142, 20, { tag: 'headland_stack', y: -3 }));
+  // 2. the fish market
+  for (const [x, z] of [[-118, -170.5], [-106, -170.5], [-127.5, -165]]) palm(x, z, 'market_palm');
+  for (const [x, z] of [[-114, -179], [-96, -177]]) pine(x, z, 'market_pine');
+  // 3. the hairpin hills: south east above the church pad, and north above the lower street's end
+  for (const [x, z] of [[177, -97], [192, -105], [186, -83], [196, -92]]) pine(x, z, 'hairpin_pine');
+  for (const [x, z] of [[171, -98], [183, -90]]) palm(x, z, 'hairpin_palm');
+  for (const [x, z] of [[150, -172], [132, -177], [168, -164], [183, -160]]) pine(x, z, 'hairpin_pine_n');
+  for (const [x, z] of [[142, -183], [160, -178], [176, -152]]) palm(x, z, 'hairpin_palm_n');
+  // 4. the rise's east hill
+  for (const [x, z] of [[104, -30], [110, 0], [100, 30], [118, -15], [108, 55]]) pine(x, z, 'rise_hill_pine');
+  for (const [x, z] of [[96, -58], [114, -45], [125, 25]]) palm(x, z, 'rise_hill_palm');
+  return out;
+}
+
 // ------------------------------------------------------------------------------------ assembly
 function generateStatic() {
   const rng = mulberry32(SEED);
@@ -697,6 +754,7 @@ function generateStatic() {
   out.push(...genRise(rng));
   out.push(...genCliff(rng));
   out.push(...genLighthouseAndBeach(rng));
+  out.push(...genSkyline(rng));
   return out;
 }
 

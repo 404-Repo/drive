@@ -1,4 +1,6 @@
-// house_wide_2storey c0: primitive assembly. Boxes for the walls, bands and cornice; the hip roof
+// house_wide_2storey c0 (fix round 1 triangle pass: glass, mullions, louvres and door strips are
+// single planes, balusters six sided and open at 0.42 m, rib runs at 0.5 m with five segments, pots at
+// lower segment counts; every modelled feature kept). Primitive assembly. Boxes for the walls, bands and cornice; the hip roof
 // is a hand built four face BufferGeometry carrying half round rib cylinders whose length shrinks
 // toward the hips; hip and ridge caps are cylinders; balusters are cylinder and box stacks; pots
 // are tapered cylinders with sphere foliage; the bougainvillea is two crossed alpha cards.
@@ -12,6 +14,7 @@ export default function (THREE) {
   const mat = (name, hex, rough, metal, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal || 0 }, extra || {})); if (name) m.name = name; return m; };
   const add = (p, geo, m, x, y, z, rx, ry, rz) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.rotation.set(rx || 0, ry || 0, rz || 0); p.add(o); return o; };
   const box = (p, w, h, d, m, x, y, z, rx, ry, rz) => add(p, new THREE.BoxGeometry(w, h, d), m, x, y, z, rx, ry, rz);
+  const plate = (p, w, h, m, x, y, z, rx, ry, rz) => add(p, new THREE.PlaneGeometry(w, h), m, x, y, z, rx, ry, rz);
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
   const WW = 0xf1e6d2, OCH = 0xe0a862, STN = 0xcdb897, SHD = 0x8d7b63, TER = 0xc4683f, OLV = 0x7d8b5a, FOL = 0x4f8a45;
@@ -45,15 +48,15 @@ export default function (THREE) {
   for (const s of [-1, 1]) { box(g, W + 2 * OV + 0.04, 0.2, 0.1, roofEdge, 0, E - 0.02, s * hd); box(g, 0.1, 0.2, D + 2 * OV + 0.04, roofEdge, s * hw, E - 0.02, 0); }
   // rib runs on the four faces, shortened toward the hips
   const rise = TOP - E, runZ = hd, lenZ = Math.hypot(runZ, rise), angZ = Math.atan2(rise, runZ), runX = hw, lenX = Math.hypot(runX, rise), angX = Math.atan2(rise, runX);
-  const rib = (S, x, len, zTop) => add(S, new THREE.CylinderGeometry(0.075, 0.075, len, 6, 1, true), roof, x, 0.075, zTop + len / 2, PI / 2, 0, 0);
+  const rib = (S, x, len, zTop) => add(S, new THREE.CylinderGeometry(0.075, 0.075, len, 5, 1, true), roof, x, 0.075, zTop + len / 2, PI / 2, 0, 0);
   const slope = (yaw, ang, mid, dist) => { const S = new THREE.Group(); S.rotation.order = 'YXZ'; S.rotation.y = yaw; S.rotation.x = ang; S.position.set(Math.sin(yaw) * dist, (E + TOP) / 2, Math.cos(yaw) * dist); g.add(S); return S; };
   for (const yaw of [0, PI]) {
     const S = slope(yaw, angZ, 0, runZ / 2);
-    for (let x = -hw + 0.2; x < hw - 0.1; x += 0.4) { const f = Math.abs(x) <= RH ? 1 : 1 - (Math.abs(x) - RH) / (hw - RH); rib(S, x, Math.max(0.3, f * lenZ - 0.1), lenZ / 2 - Math.max(0.3, f * lenZ - 0.1) - 0.02); }
+    for (let x = -hw + 0.2; x < hw - 0.1; x += 0.5) { const f = Math.abs(x) <= RH ? 1 : 1 - (Math.abs(x) - RH) / (hw - RH); rib(S, x, Math.max(0.3, f * lenZ - 0.1), lenZ / 2 - Math.max(0.3, f * lenZ - 0.1) - 0.02); }
   }
   for (const yaw of [PI / 2, -PI / 2]) {
     const S = slope(yaw, angX, 0, runX / 2);
-    for (let x = -hd + 0.2; x < hd - 0.1; x += 0.4) { const f = 1 - Math.abs(x) / hd; rib(S, x, Math.max(0.3, f * lenX - 0.1), lenX / 2 - Math.max(0.3, f * lenX - 0.1) - 0.02); }
+    for (let x = -hd + 0.2; x < hd - 0.1; x += 0.5) { const f = 1 - Math.abs(x) / hd; rib(S, x, Math.max(0.3, f * lenX - 0.1), lenX / 2 - Math.max(0.3, f * lenX - 0.1) - 0.02); }
   }
   // ridge and hip caps
   const cap = (a, b) => { const d = V(...b).sub(V(...a)); const o = add(g, new THREE.CylinderGeometry(0.11, 0.11, d.length(), 10), roofTop); o.position.copy(V(...a).add(d.clone().multiplyScalar(0.5))); o.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize()); return o; };
@@ -64,31 +67,31 @@ export default function (THREE) {
 
   const face = (rotY, px, pz) => { const F = new THREE.Group(); F.position.set(px, 0, pz); F.rotation.y = rotY; g.add(F); return F; };
   const win = (F, x, y0, w, h, shutters) => {
-    box(F, w, h, 0.02, glass, x, y0 + h / 2, 0.01);
+    plate(F, w, h, glass, x, y0 + h / 2, 0.02);
     box(F, w + 0.24, 0.12, 0.08, frameE, x, y0 + h - 0.06, 0.04); box(F, w + 0.24, 0.12, 0.08, frameE, x, y0 + 0.06, 0.04);
     box(F, 0.12, h, 0.08, frameE, x - w / 2 - 0.06, y0 + h / 2, 0.04); box(F, 0.12, h, 0.08, frameE, x + w / 2 + 0.06, y0 + h / 2, 0.04);
-    box(F, 0.06, h, 0.05, frameM, x, y0 + h / 2, 0.035); box(F, w, 0.06, 0.05, frameM, x, y0 + h * 0.6, 0.035);
+    plate(F, 0.06, h, frameM, x, y0 + h / 2, 0.06); plate(F, w, 0.06, frameM, x, y0 + h * 0.6, 0.06);
     box(F, w + 0.5, 0.12, 0.24, frameE, x, y0 - 0.06, 0.08); box(F, w + 0.54, 0.03, 0.26, cornTop, x, y0 + 0.01, 0.09);
     box(F, w + 0.5, 0.18, 0.12, frameE, x, y0 + h + 0.15, 0.04); box(F, w + 0.54, 0.03, 0.14, cornTop, x, y0 + h + 0.25, 0.05);
     if (shutters) for (const s of [-1, 1]) {
       const sx = x + s * (w / 2 + 0.12 + w / 4 + 0.02);
       box(F, w / 2 + 0.04, h, 0.06, shut, sx, y0 + h / 2, 0.03);
-      for (let k = 0; k < 3; k++) box(F, w / 2 - 0.06, 0.05, 0.03, shutEdge, sx, y0 + h * (0.2 + k * 0.3), 0.07);
+      for (let k = 0; k < 3; k++) plate(F, w / 2 - 0.06, 0.05, shutEdge, sx, y0 + h * (0.2 + k * 0.3), 0.085);
     }
   };
-  const baluster = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.075, 0.09, 0.42, 8), stone, x, y + 0.31, z); box(F, 0.16, 0.1, 0.16, stone, x, y + 0.05, z); add(F, new THREE.SphereGeometry(0.1, 8, 5), stone, x, y + 0.5, z); box(F, 0.14, 0.08, 0.14, stone, x, y + 0.62, z); };
+  const baluster = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.075, 0.09, 0.42, 6, 1, true), stone, x, y + 0.31, z); box(F, 0.16, 0.1, 0.16, stone, x, y + 0.05, z); add(F, new THREE.SphereGeometry(0.1, 6, 4), stone, x, y + 0.5, z); box(F, 0.14, 0.08, 0.14, stone, x, y + 0.62, z); };
   const balustrade = (F, x0, x1, y, z, along) => {
-    const len = x1 - x0, n = Math.round(len / 0.36);
+    const len = x1 - x0, n = Math.round(len / 0.42);
     for (let i = 0; i <= n; i++) { const t = x0 + i * len / n; if (along) baluster(F, t, y, z); else baluster(F, z, y, t); }
     if (along) { box(F, len + 0.16, 0.14, 0.26, stone, (x0 + x1) / 2, y + 0.73, z); box(F, len + 0.2, 0.04, 0.3, stoneTop, (x0 + x1) / 2, y + 0.82, z); box(F, len + 0.16, 0.12, 0.26, stone, (x0 + x1) / 2, y - 0.06, z); }
     else { box(F, 0.26, 0.14, len + 0.16, stone, z, y + 0.73, (x0 + x1) / 2); box(F, 0.3, 0.04, len + 0.2, stoneTop, z, y + 0.82, (x0 + x1) / 2); box(F, 0.26, 0.12, len + 0.16, stone, z, y - 0.06, (x0 + x1) / 2); }
   };
-  const potPlant = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.3, 0.22, 0.5, 12), pot, x, y + 0.25, z); add(F, new THREE.CylinderGeometry(0.33, 0.33, 0.08, 12), potEdge, x, y + 0.5, z); add(F, new THREE.SphereGeometry(0.42, 10, 7), leaf, x, y + 0.82, z); add(F, new THREE.SphereGeometry(0.26, 8, 6), leafTop, x + 0.1, y + 1.05, z - 0.05); };
+  const potPlant = (F, x, y, z) => { add(F, new THREE.CylinderGeometry(0.3, 0.22, 0.5, 8), pot, x, y + 0.25, z); add(F, new THREE.CylinderGeometry(0.33, 0.33, 0.08, 8), potEdge, x, y + 0.5, z); add(F, new THREE.SphereGeometry(0.42, 8, 6), leaf, x, y + 0.82, z); add(F, new THREE.SphereGeometry(0.26, 6, 4), leafTop, x + 0.1, y + 1.05, z - 0.05); };
 
   const F = face(0, 0, D / 2);
   // ground: double door with a stone surround and keystone, two windows
   box(F, 2.4, 3.0, 0.12, stone, 0, 1.5, 0.06); box(F, 1.8, 2.6, 0.08, door, 0, 1.3, 0.1);
-  for (const s of [-1, 1]) { box(F, 0.7, 2.0, 0.03, doorEdge, s * 0.45, 1.45, 0.15); box(F, 0.7, 0.35, 0.03, doorEdge, s * 0.45, 2.42, 0.15); }
+  for (const s of [-1, 1]) { plate(F, 0.7, 2.0, doorEdge, s * 0.45, 1.45, 0.165); plate(F, 0.7, 0.35, doorEdge, s * 0.45, 2.42, 0.165); }
   box(F, 0.5, 0.5, 0.14, stoneTop, 0, 2.85, 0.07); box(F, 2.8, 0.12, 0.6, stoneTop, 0, 0.06, 0.3);
   add(F, new THREE.SphereGeometry(0.05, 8, 6), stoneD, 0.12, 1.3, 0.16);
   win(F, -3.6, 1.0, 1.2, 1.7, true); win(F, 3.6, 1.0, 1.2, 1.7, true);
