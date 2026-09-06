@@ -20,7 +20,7 @@
  * aPaint (0 grass, 1 sand, 2 cobble, 3 rock, 4 asphalt; asphalt also weights the cobble channel).
  */
 import * as THREE from 'three';
-import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r3-20260906150928';
+import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r4-20260906171652';
 
 export const TERRAIN_SPEC = {
   bounds: { minX: -210, maxX: 200, minZ: -190, maxZ: 180 },

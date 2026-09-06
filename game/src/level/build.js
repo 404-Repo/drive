@@ -22,10 +22,10 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r3-20260906150928';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r3-20260906150928';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r3-20260906150928';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r3-20260906150928';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r4-20260906171652';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r4-20260906171652';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r4-20260906171652';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r4-20260906171652';
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;

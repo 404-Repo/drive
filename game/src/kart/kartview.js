@@ -71,23 +71,43 @@
  *     enough to read in a still, with a hot glow at the sliding tyre's contact point by tier.
  *   - Near cull follows the round 3 camera (3.7 m back): a kart under NEAR_CULL of the camera, or one
  *     whose screen box covers more than NEAR_AREA of the frame, is hidden until it clears.
+ *
+ * Round 4 (motion cues, Ben's targeted round):
+ *   - Drift sparks are STREAKS, not points: one instanced quad mesh for the whole field, each streak
+ *     stretched along the tyre's direction of travel (0.15 m at rest to 0.5 m at vmax, shrinking as it
+ *     dies), 2 to 3.5 cm wide and never under 1.6 px, tier colours orange, yellow, blue white at 1.4x HDR
+ *     so the threshold bloom adds a glow and not a disc. The round 3 contact glow (a 0.55 to 0.85 m soft
+ *     point at 1.6x under each tyre) was the 40 px orange disc the desktop filmstrip showed; it is gone.
+ *   - TYRE SMOKE on landing and on a kerb hit: pooled puffs (one Points for the field, normal blending,
+ *     tone mapped like the scene on the phone path), warm grey by surface, 0.6 to 1.2 s, growing and
+ *     fading. The drift smoke itself is ai/driftfx.js (attached by main.js); this pool only adds what it
+ *     does not cover. Effects for all karts: sparks 1, flares 1, cones 1, smoke 1 draws.
+ *   - Near camera FADE: an AI kart's materials are cloned once at load so its opacity can ramp from 1 at
+ *     2.8 m to 0 at 2.0 m from the camera (and to 0 when its screen box passes NEAR_AREA) instead of the
+ *     round 3 pop; the followed kart never fades.
+ *   - KERB BOUNCE: physics.js kerbHop lifts the body group (not the wheels) by up to about 3 cm, a new hit
+ *     compresses the squash spring and rolls the body 1.7 degrees toward the hit side for a quarter second,
+ *     and a few dust puffs leave the wheel.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r3-20260906150928';
-import { KART } from './physics.js?v=r3-20260906150928';
-import { CHASE } from './camera.js?v=r3-20260906150928';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r4-20260906171652';
+import { KART } from './physics.js?v=r4-20260906171652';
+import { CHASE } from './camera.js?v=r4-20260906171652';
 
-const SPARK_COLOURS = [0x9fc0ff, 0x9fc0ff, 0xffa040, 0xc48cff];   // index by tier (0 unused): sky blue, tangerine, violet, lifted toward white so they read in a still
-const GLOW_COLOURS = [0x6f95e0, 0x6f95e0, 0xf07a2a, 0x7a4fc9];    // the contact glow under the sliding tyre, the style lock tier colours
+const SPARK_COLOURS = [0xff8a2a, 0xff8a2a, 0xffd23a, 0xd6e6ff];   // index by tier (0 unused): round 4, orange, yellow, blue white (Ben's direction)
 const FLARE_COLOUR = 0xffc48a;
 const MAX_KARTS = 8;
 const SPARKS_PER_KART = 128;
 const FLARES_PER_KART = 44;
+const SMOKE_PER_KART = 40;
 const FLARE_CORE = 0xffe2b0, FLARE_FRINGE = 0xf07a2a;
-const SPARK_HDR = 2.2;      // sparks are written above 1.0 so the post's threshold bloom haloes them
+const SPARK_HDR = 1.4;      // round 4: sparks are written a little above 1.0 so the post's threshold bloom adds a glow, not a disc (round 3: 2.2)
+const SPARK_LEN = { min: 0.15, max: 0.5 };   // metres, by the kart's speed over vmax
+const SPARK_WIDTH = { min: 0.028, max: 0.045 };
+const SMOKE_COLOURS = { asphalt: 0xe4dcd0, cobble: 0xe4dcd0, pad: 0xe4dcd0, sand: 0xe6cf9c, grass: 0xc9c59a };   // warm greys, never pure white (style lock)
 const FAR_CULL = 220;   // metres, horizontal: an AI kart beyond this is not drawn (round 2, integrator)
-const NEAR_CULL = 2.4, NEAR_SHOW = 2.9;   // metres, horizontal, camera to kart centre: hide under the first, show again past the second (round 3 camera: 3.7 m back, 1.2 m up, fov 58; a kart at 2.4 m spans about 0.6 of the frame height, one alongside the player sits at 3.7 m or more)
-const NEAR_AREA = 0.22, NEAR_AREA_SHOW = 0.16;   // fraction of the frame a non player kart's screen box may cover before it is hidden (critic round 3: nothing but the player over 20 percent)
+const NEAR_FADE_OUT = 2.0, NEAR_FADE_IN = 2.8;   // metres, horizontal, camera to kart centre: an AI kart is fully faded under the first and fully shown past the second (round 4: a fade, not a pop; round 3 hid under 2.4 m)
+const NEAR_AREA = 0.22, NEAR_AREA_SHOW = 0.16;   // fraction of the frame a non player kart's screen box may cover before it is faded out (critic round 3: nothing but the player over 20 percent)
 // the hero paint: the rig's PMREM as the paint's own envMap so envMapIntensity is honoured (three 0.169 overrides
 // it with scene.environmentIntensity, the 0.4 fill, when material.envMap is null), and a roughness scale on the
 // baked value so the style lock's 0.35 body paint reads as the critic's 0.25 under the clearcoat
@@ -139,7 +159,11 @@ function adoptEnvironment(scene) {
   for (const m of PAINT.values()) {
     if (m.envMap !== env) { m.envMap = env; m.needsUpdate = true; }
   }
+  for (const m of FADE_PAINTS) {
+    if (m.envMap !== env) { m.envMap = env; m.needsUpdate = true; }
+  }
 }
+const FADE_PAINTS = new Set();   // round 4: per AI kart clones of the paint (for the near camera fade) that also need the PMREM
 const PAINT = new Map();   // side|transparent -> shared PaintMaterial
 function paintFor(src) {
   const side = src && src.side !== undefined ? src.side : THREE.FrontSide;
@@ -183,7 +207,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r3-20260906150928');
+      const m = await import('../render/materials.js?v=r4-20260906171652');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;
@@ -323,10 +347,14 @@ class EffectsPool {
     this.scene = scene;
     this.slots = 0;
     const nS = MAX_KARTS * SPARKS_PER_KART, nF = MAX_KARTS * FLARES_PER_KART;
-    this.sparks = this._points(nS, this._texture(false), 'sparks');
+    const nSm = MAX_KARTS * SMOKE_PER_KART;
+    this.sparks = this._streaks(nS);             // round 4: velocity aligned streak quads, one instanced draw
     this.flares = this._points(nF, this._texture(true), 'flares');
-    this.sparkState = new Float32Array(nS * 8);   // x y z vx vy vz life maxLife
-    this.flareState = new Float32Array(nF * 8);
+    this.smoke = this._puffs(nSm);               // round 4: landing and kerb dust, one draw
+    this.sparkState = new Float32Array(nS * 12);  // x y z vx vy vz life maxLife ax ay az len
+    this.flareState = new Float32Array(nF * 8);   // x y z vx vy vz life maxLife
+    this.smokeState = new Float32Array(nSm * 10); // x y z vx vy vz life maxLife size rot
+    this._smokeHead = 0;
     // the exhaust flames: one instanced mesh, four cones per kart (an orange outer flame and a
     // pale yellow core per pipe, coloured per instance), base at the pipe, tip pointing back
     const cone = new THREE.ConeGeometry(0.11, 1, 12, 1, true);
@@ -343,7 +371,7 @@ class EffectsPool {
     for (let i = 0; i < MAX_KARTS * 4; i++) { this.cones.setMatrixAt(i, zero); this.cones.setColorAt(i, (i & 1) ? inner : outer); }
     this.cones.instanceMatrix.needsUpdate = true;
     if (this.cones.instanceColor) this.cones.instanceColor.needsUpdate = true;
-    scene.add(this.sparks, this.flares, this.cones);
+    scene.add(this.sparks, this.flares, this.cones, this.smoke);
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
     this._tmpC = new THREE.Color();
   }
@@ -355,6 +383,103 @@ class EffectsPool {
     else { g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,0.9)'); g.addColorStop(0.8, 'rgba(255,255,255,0.25)'); g.addColorStop(1, 'rgba(255,255,255,0)'); }
     ctx.fillStyle = g; ctx.fillRect(0, 0, N, N);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+  /**
+   * Round 4: the spark streaks. An instanced 1 x 1 quad per spark; the vertex shader stretches it in view
+   * space along the projected streak axis (iAxis, world metres, the tyre's direction of travel scaled by
+   * the streak length) and gives it iWidth metres across, never under 1.6 px. A streak seen end on
+   * collapses to a dot the width of the streak. Dead sparks carry alpha 0 and leave the clip volume.
+   */
+  _streaks(n) {
+    const geo = new THREE.InstancedBufferGeometry();
+    const base = new THREE.PlaneGeometry(1, 1);
+    geo.setIndex(base.getIndex());
+    geo.setAttribute('position', base.getAttribute('position'));
+    geo.setAttribute('uv', base.getAttribute('uv'));
+    geo.instanceCount = n;
+    const mk = (size) => new THREE.InstancedBufferAttribute(new Float32Array(n * size), size).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('iPos', mk(3)); geo.setAttribute('iAxis', mk(3)); geo.setAttribute('iCol', mk(3)); geo.setAttribute('iAlpha', mk(1)); geo.setAttribute('iWidth', mk(1));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uPx: { value: 600 }, uRes: { value: new THREE.Vector2(1280, 720) } },
+      // the streak is built in SCREEN space between the projected tail (iPos) and head (iPos + iAxis): a
+      // streak along the direction of travel is seen nearly end on from the chase camera, and building it
+      // in view space (the first cut) foreshortened every spark to a dot
+      vertexShader: `attribute vec3 iPos; attribute vec3 iAxis; attribute vec3 iCol; attribute float iAlpha; attribute float iWidth;
+        uniform float uPx; uniform vec2 uRes; varying vec2 vUv; varying vec3 vC; varying float vA;
+        void main(){
+          vec4 v0 = modelViewMatrix * vec4(iPos, 1.0);
+          vec4 v1 = modelViewMatrix * vec4(iPos + iAxis, 1.0);
+          vec4 c0 = projectionMatrix * v0, c1 = projectionMatrix * v1;
+          bool bad = !(iAlpha == iAlpha) || !(v0.z == v0.z) || !(v1.z == v1.z) || !(iAlpha > 0.0) || c0.w < 0.05 || c1.w < 0.05;
+          vec2 hs = uRes * 0.5;
+          vec2 p0 = c0.xy / c0.w * hs, p1 = c1.xy / c1.w * hs;
+          vec2 d = p1 - p0; float L = length(d);
+          vec2 dir = L > 1e-3 ? d / L : vec2(1.0, 0.0);
+          float dz = max(0.3, -0.5 * (v0.z + v1.z));
+          float wPx = max(iWidth * uPx / dz, 1.6);
+          L = max(L, wPx);
+          vec2 nrm = vec2(-dir.y, dir.x);
+          vec2 p = (p0 + p1) * 0.5 + dir * (position.x * L) + nrm * (position.y * wPx);
+          float zn = 0.5 * (c0.z / c0.w + c1.z / c1.w);
+          gl_Position = bad ? vec4(2.0, 2.0, 2.0, 1.0) : vec4(p / hs, zn, 1.0);
+          vUv = uv; vC = iCol; vA = iAlpha;
+        }`,
+      fragmentShader: `varying vec2 vUv; varying vec3 vC; varying float vA;
+        void main(){
+          float x = vUv.x * 2.0 - 1.0, y = vUv.y * 2.0 - 1.0;
+          float core = 1.0 - y * y;
+          float along = smoothstep(-1.0, 0.15, x) * (1.0 - smoothstep(0.7, 1.0, x));   // tail fades in, hot head, soft tip
+          float a = core * core * along * vA;
+          if (!(a >= 0.004)) discard;
+          gl_FragColor = vec4(vC * a, a);
+        }`,
+      transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false; mesh.name = 'kart_sparks'; mesh.renderOrder = 5;
+    mesh.castShadow = false; mesh.receiveShadow = false;
+    return mesh;
+  }
+  /** A soft three lobed puff, so a rotated point never reads as a disc. */
+  _puffTexture() {
+    const N = 64, cv = document.createElement('canvas'); cv.width = cv.height = N;
+    const ctx = cv.getContext('2d');
+    const lobe = (cx, cy, r, a) => {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, 'rgba(255,255,255,' + a + ')'); g.addColorStop(0.45, 'rgba(255,255,255,' + (a * 0.55).toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, N, N);
+    };
+    lobe(N * 0.5, N * 0.5, N * 0.5, 0.9); lobe(N * 0.36, N * 0.42, N * 0.3, 0.7); lobe(N * 0.62, N * 0.38, N * 0.26, 0.6); lobe(N * 0.55, N * 0.66, N * 0.28, 0.6);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+  /** Round 4: the smoke puffs (landing, kerb dust). Normal blending, tone mapped like the scene on the direct render path. */
+  _puffs(n) {
+    const geo = new THREE.BufferGeometry();
+    const mk = (size) => new THREE.BufferAttribute(new Float32Array(n * size), size).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', mk(3)); geo.setAttribute('color', mk(3)); geo.setAttribute('size', mk(1)); geo.setAttribute('alpha', mk(1)); geo.setAttribute('rot', mk(1));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: this._puffTexture() }, uScale: { value: 400 } },
+      vertexShader: `attribute float size; attribute float alpha; attribute float rot;
+        varying float vA; varying float vR; varying vec3 vC; uniform float uScale;
+        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+        float d = max(0.5, -mv.z);
+        gl_PointSize = clamp(size * uScale / d, 0.0, 160.0);
+        vA = alpha * clamp(1.0 - d / 120.0, 0.0, 1.0); vR = rot; vC = color;
+        if (!(alpha == alpha) || !(size == size) || !(mv.z == mv.z) || !(alpha > 0.0)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; } }`,
+      fragmentShader: `uniform sampler2D uMap; varying float vA; varying float vR; varying vec3 vC;
+        void main(){ vec2 c = gl_PointCoord - 0.5; float s = sin(vR), k = cos(vR);
+        c = vec2(c.x * k - c.y * s, c.x * s + c.y * k) + 0.5;
+        float a = texture2D(uMap, c).a * vA; if (!(a >= 0.004)) discard; a = min(a, 1.0);
+        gl_FragColor = vec4(vC, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        gl_FragColor = vec4(gl_FragColor.rgb * a, a); }`,
+      transparent: true, depthWrite: false, depthTest: true, blending: THREE.NormalBlending, premultipliedAlpha: true, vertexColors: true,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false; pts.name = 'kart_smoke'; pts.renderOrder = 4; pts.visible = false;
+    pts.castShadow = false; pts.receiveShadow = false;
+    return pts;
   }
   _points(n, map, name) {
     const geo = new THREE.BufferGeometry();
@@ -385,36 +510,57 @@ class EffectsPool {
     if (this.owner === view) this.update(dt);
   }
   allocate() { if (this.slots >= MAX_KARTS) { console.warn('[kartview] more than ' + MAX_KARTS + ' karts: effects pool full, extra karts get no sparks'); return -1; } return this.slots++; }
-  spawn(kind, slot, x, y, z, vx, vy, vz, life, size, hex, hdr = 1) {
+  spawn(kind, slot, x, y, z, vx, vy, vz, life, size, hex, hdr = 1, ax = 0, ay = 0, az = 0, len = 0) {
     if (slot < 0) return;
     // never let a non finite value into the pool: a NaN in any attribute renders as an opaque black square
     // (integrator, round 1); warn once with the values so the source can be traced
-    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(vx) && Number.isFinite(vy) && Number.isFinite(vz) && life > 0 && size > 0)) {
+    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(vx) && Number.isFinite(vy) && Number.isFinite(vz) && life > 0 && size > 0 && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az) && Number.isFinite(len))) {
       if (!this._warnedNaN) { this._warnedNaN = true; console.warn('[kartview] particle spawn failed: non finite', kind, slot, [x, y, z, vx, vy, vz, life, size].map((v) => String(v)).join(' ')); }
       return;
     }
-    const per = kind === 'spark' ? SPARKS_PER_KART : FLARES_PER_KART;
-    const st = kind === 'spark' ? this.sparkState : this.flareState;
-    const pts = kind === 'spark' ? this.sparks : this.flares;
+    const spark = kind === 'spark';
+    const per = spark ? SPARKS_PER_KART : FLARES_PER_KART;
+    const F = spark ? 12 : 8;
+    const st = spark ? this.sparkState : this.flareState;
     const base = slot * per;
     // find a dead particle in this kart's range, else the oldest
     let idx = -1, oldest = -1, oldestLife = Infinity;
     for (let i = base; i < base + per; i++) {
-      const l = st[i * 8 + 6];
+      const l = st[i * F + 6];
       if (l <= 0) { idx = i; break; }
       if (l < oldestLife) { oldestLife = l; oldest = i; }
     }
     if (idx < 0) idx = oldest;
-    const o = idx * 8;
+    const o = idx * F;
     // pre aged at random: every particle born in one frame would otherwise share one age and fade as a
     // band, and at a low frame rate the trail turns into clumps one frame's travel apart
-    const age = kind === 'spark' ? life * (0.45 + 0.55 * Math.random()) : life;
+    const age = spark ? life * (0.45 + 0.55 * Math.random()) : life;
     st[o] = x; st[o + 1] = y; st[o + 2] = z; st[o + 3] = vx; st[o + 4] = vy; st[o + 5] = vz; st[o + 6] = age; st[o + 7] = life;
     const c = this._tmpC.setHex(hex);
-    const ca = pts.geometry.attributes.color.array, sa = pts.geometry.attributes.size.array;
     const hb = Number.isFinite(hdr) && hdr > 0 ? hdr : 1;
-    ca[idx * 3] = c.r * hb; ca[idx * 3 + 1] = c.g * hb; ca[idx * 3 + 2] = c.b * hb;
-    sa[idx] = size;
+    if (spark) {
+      st[o + 8] = ax; st[o + 9] = ay; st[o + 10] = az; st[o + 11] = len;
+      const g = this.sparks.geometry;
+      const ca = g.attributes.iCol.array, wa = g.attributes.iWidth.array;
+      ca[idx * 3] = c.r * hb; ca[idx * 3 + 1] = c.g * hb; ca[idx * 3 + 2] = c.b * hb;
+      wa[idx] = size;
+    } else {
+      const ca = this.flares.geometry.attributes.color.array, sa = this.flares.geometry.attributes.size.array;
+      ca[idx * 3] = c.r * hb; ca[idx * 3 + 1] = c.g * hb; ca[idx * 3 + 2] = c.b * hb;
+      sa[idx] = size;
+    }
+  }
+  /** Round 4: one smoke puff into the shared ring (no per kart range: bursts are short and rare). */
+  spawnSmoke(x, y, z, vx, vy, vz, life, size, hex) {
+    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(vx) && Number.isFinite(vy) && Number.isFinite(vz) && life > 0 && size > 0)) return;
+    const n = this.smokeState.length / 10;
+    const i = this._smokeHead; this._smokeHead = (this._smokeHead + 1) % n;
+    const st = this.smokeState, o = i * 10;
+    st[o] = x; st[o + 1] = y; st[o + 2] = z; st[o + 3] = vx; st[o + 4] = vy; st[o + 5] = vz;
+    st[o + 6] = life; st[o + 7] = life; st[o + 8] = size; st[o + 9] = Math.random() * Math.PI * 2;
+    const c = this._tmpC.setHex(hex);
+    const ca = this.smoke.geometry.attributes.color.array;
+    ca[i * 3] = c.r; ca[i * 3 + 1] = c.g; ca[i * 3 + 2] = c.b;
   }
   setCone(slot, which, worldMatrix, len, rad) {
     if (slot < 0) return;
@@ -431,13 +577,71 @@ class EffectsPool {
   }
   update(dt) {
     const dpr = Math.min(1.5, (globalThis.devicePixelRatio || 1));
-    const uScale = (globalThis.innerHeight || 720) * 0.6 * dpr;
-    this.sparks.material.uniforms.uScale.value = uScale;
+    const h = globalThis.innerHeight || 720;
+    const uScale = h * 0.6 * dpr;
     this.flares.material.uniforms.uScale.value = uScale;
-    this._step(this.sparks, this.sparkState, dt, 9, 0.97);
+    // pixels per metre at 1 m for the streak width floor and the puff size (the chase camera's fov when it is live)
+    const fov = CHASE.camera && CHASE.camera.fov ? CHASE.camera.fov : 58;
+    const px = h / (2 * Math.tan(fov * Math.PI / 360));
+    this.sparks.material.uniforms.uPx.value = px;
+    this.sparks.material.uniforms.uRes.value.set(globalThis.innerWidth || 1280, h);
+    this.smoke.material.uniforms.uScale.value = px;
+    this._stepSparks(dt);
     this._step(this.flares, this.flareState, dt, -2.5, 0.90);
+    this._stepSmoke(dt);
     this.cones.instanceMatrix.needsUpdate = true;
     if (this.cones.instanceColor) this.cones.instanceColor.needsUpdate = true;
+  }
+  _stepSparks(dt) {
+    const g = this.sparks.geometry, st = this.sparkState;
+    const pa = g.attributes.iPos.array, xa = g.attributes.iAxis.array, aa = g.attributes.iAlpha.array;
+    const n = st.length / 12;
+    const gravity = 9, damp = 0.97;
+    for (let i = 0; i < n; i++) {
+      const o = i * 12;
+      let life = st[o + 6];
+      if (life <= 0) { aa[i] = 0; continue; }
+      life -= dt; st[o + 6] = life;
+      if (!(life > 0)) { st[o + 6] = 0; aa[i] = 0; continue; }
+      st[o + 4] -= gravity * dt;
+      st[o + 3] *= damp; st[o + 5] *= damp;
+      st[o] += st[o + 3] * dt; st[o + 1] += st[o + 4] * dt; st[o + 2] += st[o + 5] * dt;
+      pa[i * 3] = st[o]; pa[i * 3 + 1] = st[o + 1]; pa[i * 3 + 2] = st[o + 2];
+      const k = life / st[o + 7];
+      const len = st[o + 11] * (0.6 + 0.4 * k);   // the streak shortens a little as the spark cools
+      xa[i * 3] = st[o + 8] * len; xa[i * 3 + 1] = st[o + 9] * len; xa[i * 3 + 2] = st[o + 10] * len;
+      aa[i] = k < 0.7 ? k / 0.7 : 1;
+    }
+    g.attributes.iPos.needsUpdate = true; g.attributes.iAxis.needsUpdate = true; g.attributes.iAlpha.needsUpdate = true;
+    g.attributes.iCol.needsUpdate = true; g.attributes.iWidth.needsUpdate = true;
+  }
+  _stepSmoke(dt) {
+    const g = this.smoke.geometry, st = this.smokeState;
+    const pa = g.attributes.position.array, sa = g.attributes.size.array, aa = g.attributes.alpha.array, ra = g.attributes.rot.array;
+    const n = st.length / 10;
+    const drag = Math.pow(0.55, dt);
+    let alive = 0;
+    for (let i = 0; i < n; i++) {
+      const o = i * 10;
+      let life = st[o + 6];
+      if (life <= 0) { aa[i] = 0; sa[i] = 0; continue; }
+      life -= dt; st[o + 6] = life;
+      if (!(life > 0)) { st[o + 6] = 0; aa[i] = 0; sa[i] = 0; continue; }
+      st[o + 3] *= drag; st[o + 5] *= drag; st[o + 4] = st[o + 4] * drag + 0.25 * dt;
+      st[o] += st[o + 3] * dt; st[o + 1] += st[o + 4] * dt; st[o + 2] += st[o + 5] * dt;
+      pa[i * 3] = st[o]; pa[i * 3 + 1] = st[o + 1]; pa[i * 3 + 2] = st[o + 2];
+      const k = 1 - life / st[o + 7];   // 0 fresh .. 1 gone
+      sa[i] = st[o + 8] * (1 + 2.4 * k);
+      const a = k < 0.1 ? k / 0.1 : 1 - (k - 0.1) / 0.9;
+      aa[i] = 0.72 * a;   // a one shot burst has no stream behind it to stack up, so each puff carries more than a drift puff
+      ra[i] = st[o + 9] + k * 0.9;
+      alive++;
+    }
+    this.smoke.visible = alive > 0;
+    if (alive > 0 || this._smokeWasAlive) {
+      g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true; g.attributes.size.needsUpdate = true; g.attributes.alpha.needsUpdate = true; g.attributes.rot.needsUpdate = true;
+    }
+    this._smokeWasAlive = alive > 0;
   }
   _step(pts, st, dt, gravity, damp) {
     const pa = pts.geometry.attributes.position.array, aa = pts.geometry.attributes.alpha.array;
@@ -523,7 +727,52 @@ export class KartView {
     this._t = Math.random() * 10;
     this._exhaustM = [new THREE.Matrix4().makeRotationX(0.35).setPosition(DEFAULT_SOCKETS.exhaustL), new THREE.Matrix4().makeRotationX(0.35).setPosition(DEFAULT_SOCKETS.exhaustR)];
     this.wheelR = KART.wheelRadius;
+    // round 4
+    this.fade = 1;                 // 0..1 near camera opacity (AI karts)
+    this.fadeMats = null;          // the per kart material clones the fade drives (AI karts only)
+    this._kerbHits = 0;
     if (scene) scene.add(this.object);
+  }
+
+  /**
+   * Round 4: clone every material under this kart once so its opacity can be driven per kart (the render
+   * module shares materials across instances; the paint is one PaintMaterial for the field). Clones are
+   * fresh objects, so the lighting rig's refresh patches them like any new material; the paint clones
+   * are registered so adoptEnvironment gives them the PMREM too.
+   */
+  _prepareFade() {
+    const map = new Map();
+    const out = [];
+    const cloneOf = (m) => {
+      if (!m) return m;
+      let c = map.get(m);
+      if (!c) {
+        c = m.clone();
+        c.name = m.name;
+        if (m.isMeshPhysicalMaterial && m.name === 'kart_paint') { c.envMap = m.envMap; c.envMapIntensity = m.envMapIntensity; FADE_PAINTS.add(c); }
+        c.userData = Object.assign({}, m.userData || {});
+        // permanently transparent (opacity 1 draws exactly as before): three 0.169 keys the program on
+        // material.transparent (the OPAQUE define), so toggling it at fade time would compile mid race
+        c.userData.__baseOpacity = c.opacity; c.userData.__baseTransparent = c.transparent;
+        c.transparent = true;
+        map.set(m, c); out.push(c);
+      }
+      return c;
+    };
+    this.object.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map(cloneOf) : cloneOf(o.material);
+    });
+    this.fadeMats = out;
+    this._fadeApplied = 1;
+  }
+  _applyFade(f) {
+    if (!this.fadeMats || f === this._fadeApplied) return;
+    this._fadeApplied = f;
+    for (const m of this.fadeMats) {
+      const base = m.userData && typeof m.userData.__baseOpacity === 'number' ? m.userData.__baseOpacity : 1;
+      m.opacity = base * f;
+    }
   }
 
   url(name) { return this.assetBase + name + '.js' + stamp(); }
@@ -712,6 +961,7 @@ export class KartView {
       this.driver = driver;
     }
     this._measure();
+    if (!this.hero) this._prepareFade();
     this.loaded = true;
     return this;
   }
@@ -737,7 +987,7 @@ export class KartView {
   }
 
   /** Meshes under this kart, a proxy for its draw calls. */
-  drawEstimate() { return countMeshes(this.object) + (this.slot === 0 ? 3 : 0); }
+  drawEstimate() { return countMeshes(this.object) + (this.slot === 0 ? 4 : 0); }
 
   update(dt, body) {
     if (!body) return;
@@ -763,35 +1013,76 @@ export class KartView {
     if (lean) { _q.setFromAxisAngle(_zAxis, -lean); o.quaternion.multiply(_q); }
     if (body.state === 'fall') { _q.setFromAxisAngle(_xAxis, Math.min(0.9, body.respawnT * 1.5)); o.quaternion.multiply(_q); }
     let visible = !(body.state === 'respawn' && body.fadeAlpha >= 1 && body.respawnPhase === 'fade');
-    // near camera cull: a kart sitting on the chase camera (an AI right behind the player) would push
-    // its helmet through the bottom of the frame; the followed kart is never culled. Round 3: also by
-    // screen area, so no kart but the player's ever covers more than a fifth of the frame
+    // near camera FADE (round 4; round 3 was a hard hide): a kart sitting on the chase camera (an AI right
+    // behind the player) would push its helmet through the bottom of the frame; the followed kart is never
+    // faded. Opacity ramps from 1 at NEAR_FADE_IN to 0 at NEAR_FADE_OUT, and to 0 while the kart's screen
+    // box covers more than NEAR_AREA of the frame (critic round 3: nothing but the player over a fifth).
+    let fadeTarget = 1;
     if (CHASE.active && CHASE.bodyId !== body.id && CHASE.bodyId !== this.id) {
       const dx = o.position.x - CHASE.position.x, dz = o.position.z - CHASE.position.z;
       const d = Math.hypot(dx, dz);
-      if (d < NEAR_CULL) this._nearCulled = true;
-      else if (d > NEAR_SHOW) this._nearCulled = false;
+      fadeTarget = Math.max(0, Math.min(1, (d - NEAR_FADE_OUT) / (NEAR_FADE_IN - NEAR_FADE_OUT)));
       if (d < 9 && CHASE.camera) {
         const sb = this.screenBox(CHASE.camera);
         const area = sb ? sb.nw * sb.nh : 0;
         if (area > NEAR_AREA) this._areaCulled = true;
         else if (area < NEAR_AREA_SHOW) this._areaCulled = false;
       } else this._areaCulled = false;
-      if (this._nearCulled || this._areaCulled) visible = false;
+      if (this._areaCulled) fadeTarget = 0;
       if (d > FAR_CULL) visible = false;   // round 2 (integrator): a kart 220 m off is 4 px wide and cost 7k triangles (all 7 at the grid seen from the hairpin exit)
-    } else { this._nearCulled = false; this._areaCulled = false; }
+    } else { this._areaCulled = false; }
+    this.fade += (fadeTarget - this.fade) * Math.min(1, dt / 0.08);
+    if (Math.abs(this.fade - fadeTarget) < 0.01) this.fade = fadeTarget;
+    if (this.fadeMats) { if (this.fade < 0.02) visible = false; else this._applyFade(Math.min(1, this.fade)); }
+    else if (this.fade < 0.5) visible = false;   // no clones (the hero when it is not the followed kart): the round 3 hide
     o.visible = visible;
     adoptEnvironment(this.scene);
 
     // hop squash: stretch on take off, squash on landing, spring back
     const vy = body.vy || 0;
     if (this._wasGrounded && !body.grounded && vy > 1) this.squashV = 1.6;        // take off stretch
-    if (!this._wasGrounded && body.grounded && this._prevVy < -1.5) this.squashV = -2.4;  // landing squash
+    const landedNow = !this._wasGrounded && body.grounded && this._prevVy < -1.5;
+    const landVy = this._prevVy;
+    if (landedNow) this.squashV = -2.4;  // landing squash
     this._wasGrounded = body.grounded; this._prevVy = vy;
+    // round 4: a kerb hit compresses the suspension a little and lifts the body by physics' kerbHop spring
+    const kerbHits = body.kerbHits || 0;
+    let newKerb = false;
+    if (kerbHits > this._kerbHits) { newKerb = true; this.squashV -= 0.9; }
+    this._kerbHits = kerbHits;
     this.squashV += -this.squash * 180 * dt - this.squashV * 14 * dt;
     this.squash += this.squashV * dt;
     const sy = 1 + Math.max(-0.22, Math.min(0.14, this.squash));
     this.bodyGroup.scale.set(1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
+    const kerbHop = Number.isFinite(body.kerbHop) ? Math.max(-0.01, Math.min(0.05, body.kerbHop)) : 0;
+    this.bodyGroup.position.y = kerbHop;
+    const kerbT = body.kerbT > 0 ? body.kerbT / 0.25 : 0;
+    this.bodyGroup.rotation.z = (body.kerbSide || 0) * 0.03 * kerbT * kerbT;   // 1.7 degrees toward the hit side, easing out
+    // landing smoke and kerb dust (round 4): pooled puffs from the rear tyres
+    const landed = landedNow;
+    if (this.pool && this.slot >= 0 && (landed || newKerb) && Math.abs(body.speed) > 3 && o.visible) {
+      const P = this.pool;
+      const hex = SMOKE_COLOURS[body.surface] || SMOKE_COLOURS.asphalt;
+      const hx = Math.sin(body.heading), hz = Math.cos(body.heading), rx = -hz, rz = hx;
+      const impact = landed ? Math.min(1, -landVy / 6) : 0.35;
+      const wheels = landed ? [this.wheels[2], this.wheels[3]] : [this.wheels[body.kerbSide > 0 ? 3 : 2]];
+      // the puffs leave WITH the kart and shed speed under the pool's drag, so the burst stays a ring round the rear
+      // tyres for its short life: a burst left on the road (first cut, a quarter of the kart's speed) was 4 m behind
+      // the kart, at the chase camera, inside 0.4 s (hop probe), and a long lived one flies into the lens
+      const follow = landed ? 1.0 : 0.9;
+      for (const w of wheels) {
+        if (!w) continue;
+        const side = w.at.x > 0 ? -1 : 1;   // the kart's +X is its left, so +X wheels puff outward to the left (-right)
+        const count = landed ? 7 + Math.round(7 * impact) : 4;
+        for (let i = 0; i < count; i++) {
+          _v.copy(w.at); _v.y = 0.05; o.localToWorld(_v);
+          const out = (0.6 + Math.random() * 1.2) * (0.6 + impact), back = -(0.3 + Math.random() * 0.6);
+          P.spawnSmoke(_v.x + (Math.random() - 0.5) * 0.15, _v.y + Math.random() * 0.06, _v.z + (Math.random() - 0.5) * 0.15,
+            body.vel.x * follow + rx * side * out + hx * back + (Math.random() - 0.5) * 0.4, 0.4 + Math.random() * 0.7 * (0.5 + impact), body.vel.z * follow + rz * side * out + hz * back + (Math.random() - 0.5) * 0.4,
+            landed ? 0.5 + Math.random() * 0.3 : 0.35 + Math.random() * 0.15, landed ? (0.2 + Math.random() * 0.12) * (0.8 + 0.5 * impact) : 0.14 + Math.random() * 0.08, hex);
+        }
+      }
+    }
 
     // wheels: all four roll, the front pair steers
     const spinA = body.wheelSpin || 0;
@@ -850,36 +1141,35 @@ export class KartView {
     P.tick(dt, this);
     const o = this.object;
     o.updateMatrixWorld(true);
-    // drift sparks from the rear wheels' contact points
+    // drift sparks from the rear wheels' contact points. Round 4: STREAKS aligned to the tyre's direction of
+    // travel, length by speed (SPARK_LEN), thrown backward and a little outward, barely off the ground,
+    // left behind on the road (a spark's own world velocity is small; the kart's motion draws the trail)
     const tier = body.drift && body.drift.active ? body.drift.tier : 0;
     if (tier > 0 && body.grounded) {
-      // a dense stream off both rear tyres, left behind on the road for two to four metres (at 24 m/s a
-      // 0.2 s life is 5 m of trail; the kart's own motion draws the streak). Round 3: bigger, longer
-      // lived and written above 1.0 so a single frame shows a spray, not a few dots
-      this._sparkAcc += dt * (320 + 110 * tier);
+      this._sparkAcc += dt * (300 + 90 * tier);
       const colour = SPARK_COLOURS[tier];
+      const sp = Math.hypot(body.vel.x, body.vel.z);
+      const speedK = Math.min(1, sp / KART.vmax);
+      const lenBase = SPARK_LEN.min + (SPARK_LEN.max - SPARK_LEN.min) * speedK;
+      // the tyre's velocity direction (the slide), the streak axis for every spark this frame
+      const tx = sp > 0.5 ? body.vel.x / sp : Math.sin(body.heading), tz = sp > 0.5 ? body.vel.z / sp : Math.cos(body.heading);
       let k = 0;
       while (this._sparkAcc >= 1) {
         this._sparkAcc -= 1;
         const w = this.wheels[2 + ((k++) & 1)];
         if (!w) break;
         _v.copy(w.at); _v.y = 0.03; o.localToWorld(_v);
-        // thrown backward, a little outward toward the drift's outside, barely off the ground
         _v2.set(Math.sin(body.heading), 0, Math.cos(body.heading));
-        const back = -(2.0 + Math.random() * 3.5), side = (Math.random() - 0.5) * 1.6 - body.drift.dir * (0.6 + Math.random() * 1.2);
+        const back = -(2.0 + Math.random() * 3.0), side = (Math.random() - 0.5) * 1.4 - body.drift.dir * (0.5 + Math.random() * 1.0);
         const rx = -Math.cos(body.heading), rz = Math.sin(body.heading);
-        const big = Math.random() < 0.35;
         const sub = dt * Math.random();                  // where along this frame's travel the spark left the tyre
-        P.spawn('spark', this.slot, _v.x - body.vel.x * sub + (Math.random() - 0.5) * 0.18, _v.y + Math.random() * 0.08, _v.z - body.vel.z * sub + (Math.random() - 0.5) * 0.18,
-          _v2.x * back + rx * side, 0.6 + Math.random() * 2.2, _v2.z * back + rz * side,
-          0.12 + Math.random() * 0.2, (big ? 0.21 : 0.12) + 0.025 * tier + Math.random() * 0.04, colour, SPARK_HDR);
-      }
-      // the hot spot: a soft glow at each rear tyre's contact point in the tier colour, one frame's life,
-      // so the sliding tyre reads lit from any distance
-      for (let i = 2; i < 4; i++) {
-        const w = this.wheels[i]; if (!w) continue;
-        _v.copy(w.at); _v.y = 0.06; o.localToWorld(_v);
-        P.spawn('flare', this.slot, _v.x, _v.y, _v.z, body.vel.x * 0.9, 0, body.vel.z * 0.9, 0.05, 0.55 + 0.1 * tier, GLOW_COLOURS[tier], 1.6);
+        // axis: the tyre's travel direction with a little of the spark's own scatter, a touch of lift
+        let ax = tx * 3 + rx * side * 0.25, ay = 0.12 + Math.random() * 0.2, az = tz * 3 + rz * side * 0.25;
+        const al = Math.hypot(ax, ay, az) || 1; ax /= al; ay /= al; az /= al;
+        P.spawn('spark', this.slot, _v.x - body.vel.x * sub + (Math.random() - 0.5) * 0.16, _v.y + Math.random() * 0.06, _v.z - body.vel.z * sub + (Math.random() - 0.5) * 0.16,
+          _v2.x * back + rx * side, 0.5 + Math.random() * 1.8, _v2.z * back + rz * side,
+          0.12 + Math.random() * 0.2, SPARK_WIDTH.min + Math.random() * (SPARK_WIDTH.max - SPARK_WIDTH.min) + 0.004 * tier, colour, SPARK_HDR,
+          ax, ay, az, lenBase * (0.7 + 0.3 * Math.random()));
       }
     }
     // boost: exhaust flare sprites and the two cones

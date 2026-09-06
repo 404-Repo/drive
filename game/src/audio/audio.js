@@ -25,7 +25,7 @@
  * sound is skipped. The countdown beeps have a procedural fallback so the 3, 2, 1, GO is never silent while the
  * files are still decoding on a slow phone.
  *
- * Events consumed (src/game/events.js): countdown, go, itemPickup, itemReady, itemUsed, hit, spin, bump, restart,
+ * Events consumed (src/game/events.js): countdown, go, itemPickup, itemReady, itemUsed, hit, spin, bump, kerb, restart,
  * boostPad, miniTurbo, respawn, fallStart, lapComplete, lapCrossed, finalLap, finish, placeChange, uiClick,
  * shieldUp, shieldPop, buoyLock, bounce, crateDrop, raceEnd.
  */
@@ -36,7 +36,7 @@ const FILES = {
   boost: ['boost'], pad: ['pad'], item_roulette_tick: ['item_roulette_tick'], item_pickup: ['item_pickup'],
   buoy_launch: ['buoy_launch'], cannonball_fire: ['cannonball_fire'], cannonball_bounce: ['cannonball_bounce_1', 'cannonball_bounce_2'],
   crate_drop: ['crate_drop'], crate_spill: ['crate_spill'], shield_up: ['shield_up'], shield_pop: ['shield_pop'],
-  hit_spin: ['hit_spin'], bump: ['bump_1', 'bump_2'], splash: ['splash'], respawn: ['respawn'],
+  hit_spin: ['hit_spin'], bump: ['bump_1', 'bump_2'], kerb_rumble: ['kerb_rumble'], splash: ['splash'], respawn: ['respawn'],
   countdown_beep: ['countdown_beep'], countdown_go: ['countdown_go'], lap_bell: ['lap_bell'], final_lap_sting: ['final_lap_sting'],
   finish_fanfare: ['finish_fanfare'], place_up: ['place_up'], place_down: ['place_down'], ui_click: ['ui_click'],
   ambience_sea_gulls: ['ambience_sea_gulls'], ambience_crowd: ['ambience_crowd'],
@@ -401,6 +401,14 @@ export class Audio {
     const pa = this._posOf(a), pb = this._posOf(b), p = pa || pb;
     if (p) this._play('bump', p, vol * 0.8, { jitter: 80 });
   }
+  /** round 4 (kart -> audio): a rear wheel entered a kerb band; a short dry thump, louder with speed, spatial for the others */
+  kerb(id, speed = 8, x = 0, z = 0) {
+    if (this._dedupe('kerb', id, 90)) return;
+    const vol = 0.18 + 0.12 * Math.min(1, speed / VMAX);
+    const key = this.buffers.has('kerb_rumble') ? 'kerb_rumble' : 'bump';
+    const opts = key === 'kerb_rumble' ? { jitter: 60, rate: 1 } : { jitter: 60, rate: 1.6 };
+    this._play(key, this._isMe(id) ? null : { x, z }, vol, opts);
+  }
   boostPad(id) { if (!this._dedupe('pad', id, 400)) this._playFor(id, 'pad', 0.7, 0.4, { jitter: 15 }); }
   miniTurbo(id, tier) {
     const key = 'miniturbo_' + clamp(tier | 0, 1, 3);
@@ -475,6 +483,7 @@ export class Audio {
     ev.on('hit', (p) => this.hit(P(p).target, P(p).by, P(p).key, !!P(p).shielded));
     ev.on('spin', (p) => this.spin(P(p).id));
     ev.on('bump', (p) => this.bump(P(p).a, P(p).b, P(p).speed));
+    ev.on('kerb', (p) => this.kerb(P(p).id, P(p).speed, P(p).x, P(p).z));
     ev.on('boostPad', (p) => this.boostPad(P(p).id));
     ev.on('miniTurbo', (p) => this.miniTurbo(P(p).id, P(p).tier));
     ev.on('respawn', (p) => this.respawn(P(p).id));

@@ -24,6 +24,15 @@
  *
  * Nothing here draws. kartview.js reads pos, heading, tilt, wheelSpin, steerAngle, spinAngle,
  * drift and boost; camera.js reads pos, heading, groundY, speed, drift and tilt.
+ *
+ * Round 4 (motion cues): KERB BOUNCE. Each frame the two rear wheel contact points are probed
+ * through world.groundAt when the kart is near a road edge; a wheel that enters the kerb band (the
+ * kerb substrate, or the striped race kerb apron where road.kerbs has a station) kicks a small
+ * suspension spring (`kerbHop`, metres, about 3 cm) that kartview.js applies to the body only, and
+ * emits 'kerb' { id, side, speed, x, z } for the audio module. While a wheel rides the band the
+ * spring is re kicked at 8 Hz so the kerb rumbles. Handling is untouched: the hop is a view value,
+ * the kart never leaves the ground for it (an airborne kart loses drive and steer, and the touch
+ * lap already leaves the road at two corners).
  */
 import * as THREE from 'three';
 
@@ -48,6 +57,9 @@ export const KART = {
   stick: 0.6,                                            // m: a kart within this of the ground and not hopping is glued to it (crests do not launch it)
   radius: 0.7, mass: 1,
   wheelRadius: 0.22, steerLock: 0.45,                    // for the view: front wheel angle at full steer
+  // round 4: the kerb bounce spring (view only). k and c give a 3 cm peak 60 ms after a 1.1 m/s kick and
+  // settle inside 0.3 s; rumble re kicks at 8 Hz while a wheel stays on the band
+  kerb: { kick: 1.3, rumbleKick: 0.4, rumbleHz: 8, k: 420, c: 16, track: 0.62, rearZ: -0.55, minSpeed: 3, band: 2.2 },
 };
 
 const TAU = Math.PI * 2;
@@ -59,6 +71,30 @@ let _nextId = 1;
 const _v3 = new THREE.Vector3();
 const _v3b = new THREE.Vector3();
 const _n = new THREE.Vector3();
+const _qs = {};
+const _kg = [{}, {}];
+// round 4: where the striped race kerb runs, per side, as 1024 progress bins (road.kerbs stations, 4 m pitch,
+// each marked 3 m either way); built once per world and shared by every body
+const KERB_BINS = 1024;
+const _kerbTables = new WeakMap();
+function raceKerbTable(world, spline) {
+  const road = world && world.road;
+  if (!road || !Array.isArray(road.kerbs)) return null;
+  let t = _kerbTables.get(road);
+  if (t) return t;
+  t = [new Uint8Array(KERB_BINS), new Uint8Array(KERB_BINS)];
+  const L = spline && spline.length > 0 ? spline.length : 1061;
+  const reach = Math.max(1, Math.round(3 / L * KERB_BINS));
+  for (const k of road.kerbs) {
+    let p = typeof k.progress === 'number' ? k.progress : (typeof k.s === 'number' ? k.s / L : null);
+    if (p == null || !Number.isFinite(p)) continue;
+    const sgn = k.side === 'L' ? 0 : 1;
+    const c = Math.floor(((p % 1) + 1) % 1 * KERB_BINS);
+    for (let d = -reach; d <= reach; d++) t[sgn][((c + d) % KERB_BINS + KERB_BINS) % KERB_BINS] = 1;
+  }
+  _kerbTables.set(road, t);
+  return t;
+}
 
 /** How far along the lap a body is, in laps: lap - 1 + progress. Monotonic while racing forward. */
 function raceProgressOf(b) { return b.lap - 1 + b.progress; }
@@ -116,6 +152,15 @@ export class KartBody {
     this._prevProgress = 0;
     this._steerSmoothed = 0;
     this._lastRespawnPoint = { progress: 0 };
+    // round 4: kerb bounce (view values) and the per side band state
+    this.kerbHop = 0;                      // metres, the suspension hop kartview applies to the body
+    this.kerbHopV = 0;
+    this.kerbSide = 0;                     // -1 left wheel, 1 right wheel, the last wheel that hit
+    this.kerbT = 0;                        // seconds left of the hit's roll cue
+    this.kerbHits = 0;                     // counter, the view reads a rising value as a new hit
+    this.kerbOn = false;                   // a rear wheel is on the kerb band this frame
+    this._kerbOnSide = [false, false];
+    this._kerbRumbleT = 0;
   }
 
   get forward() { return _v3.set(Math.sin(this.heading), 0, Math.cos(this.heading)); }
@@ -310,6 +355,7 @@ export class KartBody {
     this.distance += Math.hypot(this.vel.x, this.vel.z) * dt;
     this.cobbleShake = this.surface === 'cobble' && this.grounded && Math.abs(this.speed) > 4 ? 1 : 0;
     this._updateTilt();
+    this._kerbs(dt);
 
     // --- fall detection
     const water = this.surface === 'water';
@@ -371,6 +417,63 @@ export class KartBody {
     if (stick || (this.pos.y <= gy + 0.02 && this.vy <= 0)) { this.pos.y = gy; this.vy = 0; this.grounded = true; }
     else this.grounded = false;
     this.vel.y = this.vy;
+  }
+
+  /**
+   * Round 4: the kerb bounce. Probes the two rear wheel contact points when the kart is within
+   * KART.kerb.band of a road edge; a wheel entering the kerb band kicks the hop spring and emits 'kerb'.
+   */
+  _kerbs(dt) {
+    const C = KART.kerb;
+    // the spring, always integrated so a kick settles even off the band
+    this.kerbHopV += (-this.kerbHop * C.k - this.kerbHopV * C.c) * dt;
+    this.kerbHop += this.kerbHopV * dt;
+    if (Math.abs(this.kerbHop) < 1e-4 && Math.abs(this.kerbHopV) < 2e-3) { this.kerbHop = 0; this.kerbHopV = 0; }
+    if (this.kerbT > 0) this.kerbT = Math.max(0, this.kerbT - dt);
+    const w = this.world, s = this.spline;
+    const on = this._kerbOnSide;
+    if (!w || typeof w.groundAt !== 'function' || !this.grounded || Math.abs(this.speed) < C.minSpeed || this.state === 'spin' || this.state === 'fall' || this.state === 'respawn') {
+      on[0] = on[1] = false; this.kerbOn = false; return;
+    }
+    // cheap reject: both rear wheels well inside the road
+    let half = 6;
+    if (s && typeof s.at === 'function') { const q = s.at(this.progress, _qs); if (q && q.width > 0) half = q.width / 2; }
+    if (this.onRoad && Math.abs(this.lateral) + C.track < half - C.band) { on[0] = on[1] = false; this.kerbOn = false; return; }
+    const hx = Math.sin(this.heading), hz = Math.cos(this.heading);
+    const rx = -hz, rz = hx;                                   // right of travel
+    const table = raceKerbTable(w, s);
+    let any = false;
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      const px = this.pos.x + rx * side * C.track + hx * C.rearZ, pz = this.pos.z + rz * side * C.track + hz * C.rearZ;
+      let g = null;
+      try { g = w.groundAt(px, pz, _kg[i]); } catch (e) { g = null; }
+      let band = false;
+      if (g && g.surface !== 'water' && g.surface !== 'air') {
+        if (g.zone === 'kerb') band = true;
+        else if (g.zone === 'road' && typeof g.lateral === 'number' && table) {
+          // the striped race kerb apron: the outer 1.2 m of the road where a kerb_module station runs on that side
+          const al = Math.abs(g.lateral), sgn = g.lateral < 0 ? 0 : 1;
+          if (al > half - 1.25 && typeof g.progress === 'number') {
+            const bin = ((Math.floor(g.progress * KERB_BINS) % KERB_BINS) + KERB_BINS) % KERB_BINS;
+            band = table[sgn][bin] === 1;
+          }
+        }
+      }
+      const was = on[i];
+      on[i] = band;
+      if (band) any = true;
+      if (band && !was) {
+        this.kerbHopV += C.kick * Math.min(1, 0.5 + Math.abs(this.speed) / 20);
+        this.kerbSide = side; this.kerbT = 0.25; this.kerbHits += 1; this._kerbRumbleT = 1 / C.rumbleHz;
+        if (this.events) this.events.emit('kerb', { id: this.id, side, speed: Math.abs(this.speed), x: px, z: pz });
+      }
+    }
+    this.kerbOn = any;
+    if (any) {
+      this._kerbRumbleT -= dt;
+      if (this._kerbRumbleT <= 0) { this._kerbRumbleT += 1 / C.rumbleHz; this.kerbHopV += C.rumbleKick * (0.6 + Math.random() * 0.6); }
+    }
   }
 
   _updateTilt() {

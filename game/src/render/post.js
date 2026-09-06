@@ -27,7 +27,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r3-20260906150928';
+import { getTier } from './quality.js?v=r4-20260906171652';
 
 /**
  * Bloom threshold in linear HDR. Round 1: lit whitewash measured 0.62 to 0.72 and the threshold was 0.92. Round 2
@@ -35,9 +35,24 @@ import { getTier } from './quality.js?v=r3-20260906150928';
  * threshold is 4.0: no diffuse surface blooms, only the sun's specular hot spots on paint and wet kerb tops,
  * additive flares and the sun disc (`?bloomt=` for the A/B).
  */
-export const BLOOM = { threshold: 4.0, strength: 0.28, radius: 0.35 };
+export const BLOOM = { threshold: 4.0, strength: 0.28, radius: 0.35, radius0: 0.0, cap: 8.0, wideFloor: 0.5 };
+/**
+ * Round 4 (targeted motion cues, render item 1): the bloom is for the sun's highlights and the boost flame, not
+ * for turning a drift spark streak into a disc. Three guards, all A/B knobs (`?bloomcap=`, `?bloomr0=`,
+ * `?bloomfloor=`; the old pass is cap=1e9 r0=0.35 floor=0):
+ *   cap        the most luminance one pixel may inject into the bloom (after the threshold weight). A dozen additive
+ *              spark sprites stack to 40 to 60 linear at the tyre and the two quarter resolution blurs spread that
+ *              energy into a 60 to 75 px disc (measured on work/fix4_render/d066: pale discs the size of the tyre);
+ *              the halo's radius grows with the log of the energy, so bounding the energy bounds the disc. A soft
+ *              knee from cap/2 up to cap, so nothing plateaus.
+ *   radius0    the first blur level's radius (the second keeps `radius`): the tight glow round a thin feature.
+ *   wideFloor  what the second, wide level ignores: its input is the first level's output minus this floor, so a
+ *              thin streak (diluted by the tight blur to well under the floor) gets the tight glow only, while an
+ *              extended bright area (the boost flame stack, the sun disc, a hot specular patch) still carries the
+ *              wide halo it has now.
+ */
 export const GRADE = { shadowCool: [0.975, 0.99, 1.045], highlightWarm: [1.04, 1.01, 0.965] };   // each channel within 6 percent of 1
-export const SPEED_LINES_MAX = 0.42;   // round 3 (kart -> render): 0.22 was invisible in a still at 33 m/s
+export const SPEED_LINES_MAX = 0.35;   // round 4 (kart -> render): Ben asked 0.35 max; round 3 had 0.42, 0.22 was invisible at 33 m/s
 
 function knob(name) {
   try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; }
@@ -70,7 +85,7 @@ void main() {
     float within = abs(fract(ang * 96.0 + 0.5) - 0.5) * 2.0;          // 0 at the streak centre, 1 at its edge
     float phase = fract(r * 1.6 - uTime * (2.0 + seed * 2.5) + seed * 7.0);
     float streak = smoothstep(0.45, 0.85, phase) * (1.0 - smoothstep(0.15, 0.45, within)) * step(0.55, hsh(seg + 3.7));
-    float field = smoothstep(0.28, 0.60, r);
+    float field = smoothstep(0.42, 0.72, r);   // round 4: the field starts beyond the kart box (bottom near r 0.38) so the lines never touch the kart
     float a = streak * field * uSpeed;
     col = mix(col, vec3(1.0, 0.97, 0.90), a);
   }
@@ -94,7 +109,7 @@ void main() {
     float within = abs(fract(ang * 96.0 + 0.5) - 0.5) * 2.0;
     float phase = fract(r * 1.6 - uTime * (2.0 + seed * 2.5) + seed * 7.0);
     float streak = smoothstep(0.45, 0.85, phase) * (1.0 - smoothstep(0.15, 0.45, within)) * step(0.55, hsh(seg + 3.7));
-    float field = smoothstep(0.28, 0.60, r);
+    float field = smoothstep(0.42, 0.72, r);   // round 4: the field starts beyond the kart box (bottom near r 0.38) so the lines never touch the kart
     a = streak * field * uSpeed;
     col = vec3(1.0, 0.97, 0.90);
   }
@@ -159,7 +174,7 @@ void main() {
 // keeps every bloom step on small non multisampled targets and composites through a normal full
 // screen write into the composer's write buffer, the same path the AO and grade passes already use.
 const BRIGHT_FS = /* glsl */`
-uniform sampler2D tDiffuse; uniform float uThreshold, uKnee; varying vec2 vUv;
+uniform sampler2D tDiffuse; uniform float uThreshold, uKnee, uCap; varying vec2 vUv;
 void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
   // a single NaN or Inf pixel in the scene buffer (a degenerate normal on a clearcoat or a card edge) would
@@ -170,68 +185,97 @@ void main() {
   float soft = clamp((l - uThreshold + uKnee) / (2.0 * uKnee), 0.0, 1.0);
   soft = soft * soft * uKnee;
   float w = max(soft, l - uThreshold) / max(l, 1e-4);
-  gl_FragColor = vec4(c * w, 1.0);
+  vec3 o = c * w;
+  // per pixel energy cap with a soft knee from cap/2 to cap (round 4: stacked additive sparks)
+  float ol = max(max(o.r, o.g), o.b);
+  float hk = uCap * 0.5;
+  if (ol > hk) o *= (hk + hk * (1.0 - exp(-(ol - hk) / hk))) / ol;
+  gl_FragColor = vec4(o, 1.0);
 }`;
 const BLUR_FS = /* glsl */`
-uniform sampler2D tDiffuse; uniform vec2 uStep; varying vec2 vUv;
+uniform sampler2D tDiffuse; uniform vec2 uStep; uniform float uFloor; varying vec2 vUv;
+// uFloor is subtracted from every sample (0 on every pass but the wide level's first, round 4: a thin streak the
+// tight level has already diluted under the floor never reaches the wide halo)
+vec3 tap(vec2 uv) { return max(texture2D(tDiffuse, uv).rgb - uFloor, 0.0); }
 void main() {
-  vec3 c = texture2D(tDiffuse, vUv).rgb * 0.2270270270;
-  c += (texture2D(tDiffuse, vUv + uStep * 1.3846153846).rgb + texture2D(tDiffuse, vUv - uStep * 1.3846153846).rgb) * 0.3162162162;
-  c += (texture2D(tDiffuse, vUv + uStep * 3.2307692308).rgb + texture2D(tDiffuse, vUv - uStep * 3.2307692308).rgb) * 0.0702702703;
+  vec3 c = tap(vUv) * 0.2270270270;
+  c += (tap(vUv + uStep * 1.3846153846) + tap(vUv - uStep * 1.3846153846)) * 0.3162162162;
+  c += (tap(vUv + uStep * 3.2307692308) + tap(vUv - uStep * 3.2307692308)) * 0.0702702703;
   gl_FragColor = vec4(c, 1.0);
 }`;
 const COMP_FS = /* glsl */`
-uniform sampler2D tDiffuse, tBloom; uniform float uStrength; varying vec2 vUv;
-void main() { gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb + texture2D(tBloom, vUv).rgb * uStrength, 1.0); }`;
+uniform sampler2D tDiffuse, tTight, tWide; uniform float uStrength, uFloor; varying vec2 vUv;
+// the tight level keeps everything up to the floor, the wide level carries only the excess above it (round 4): the
+// total energy is the old pass's, but a thin streak, whose tight glow never reaches the floor, gets no wide halo
+void main() {
+  vec3 bloom = min(texture2D(tTight, vUv).rgb, vec3(uFloor)) + texture2D(tWide, vUv).rgb;
+  gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb + bloom * uStrength, 1.0); }`;
 
 class ThresholdBloomPass extends Pass {
-  constructor(THREE, w, h, { threshold, strength, radius }) {
+  constructor(THREE, w, h, { threshold, strength, radius, radius0 = radius, cap = 1e9, wideFloor = 0 }) {
     super();
     this.THREE = THREE;
-    this.strength = strength; this.radius = radius;
+    this.strength = strength; this.radius = radius; this.radius0 = radius0; this.wideFloor = wideFloor;
     const opts = { type: THREE.HalfFloatType, colorSpace: THREE.LinearSRGBColorSpace, depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
     this.rtBright = new THREE.WebGLRenderTarget(1, 1, opts);
     this.rtA = new THREE.WebGLRenderTarget(1, 1, opts);
     this.rtB = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtC = new THREE.WebGLRenderTarget(1, 1, opts);   // the wide level's output; rtB keeps the tight level's
     const mat = (fs, uniforms) => new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader: fs, depthTest: false, depthWrite: false, blending: THREE.NoBlending });
-    this.bright = mat(BRIGHT_FS, { tDiffuse: { value: null }, uThreshold: { value: threshold }, uKnee: { value: 0.25 } });
-    this.blur = mat(BLUR_FS, { tDiffuse: { value: null }, uStep: { value: new THREE.Vector2() } });
-    this.comp = mat(COMP_FS, { tDiffuse: { value: null }, tBloom: { value: null }, uStrength: { value: strength } });
+    this.bright = mat(BRIGHT_FS, { tDiffuse: { value: null }, uThreshold: { value: threshold }, uKnee: { value: 0.25 }, uCap: { value: cap } });
+    this.blur = mat(BLUR_FS, { tDiffuse: { value: null }, uStep: { value: new THREE.Vector2() }, uFloor: { value: 0 } });
+    this.comp = mat(COMP_FS, { tDiffuse: { value: null }, tTight: { value: null }, tWide: { value: null }, uStrength: { value: strength }, uFloor: { value: wideFloor } });
     this.quad = new FullScreenQuad(this.bright);
     this.setSize(w, h);
   }
   setSize(w, h) {
     this.rtBright.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
     const qw = Math.max(1, Math.round(w / 4)), qh = Math.max(1, Math.round(h / 4));
-    this.rtA.setSize(qw, qh); this.rtB.setSize(qw, qh);
+    this.rtA.setSize(qw, qh); this.rtB.setSize(qw, qh); this.rtC.setSize(qw, qh);
     this.qw = qw; this.qh = qh;
   }
   setStrength(v) { this.comp.uniforms.uStrength.value = v; }
+  /** Live A/B of every bloom number (work/fix4_render/driftshot.mjs drives it through __DBG__.post.bloom). */
+  setParams({ threshold, strength, radius, radius0, cap, wideFloor } = {}) {
+    if (threshold !== undefined) this.bright.uniforms.uThreshold.value = threshold;
+    if (cap !== undefined) this.bright.uniforms.uCap.value = cap;
+    if (strength !== undefined) this.setStrength(strength);
+    if (radius !== undefined) this.radius = radius;
+    if (radius0 !== undefined) this.radius0 = radius0;
+    if (wideFloor !== undefined) { this.wideFloor = wideFloor; this.comp.uniforms.uFloor.value = wideFloor; }
+    return this.params();
+  }
+  params() { return { threshold: this.bright.uniforms.uThreshold.value, strength: this.comp.uniforms.uStrength.value, radius: this.radius, radius0: this.radius0, cap: this.bright.uniforms.uCap.value, wideFloor: this.wideFloor }; }
   render(renderer, writeBuffer, readBuffer) {
     const autoClear = renderer.autoClear; renderer.autoClear = false;
-    const step = 1 + this.radius;
     // bright pass at half resolution
     this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.quad.material = this.bright;
     renderer.setRenderTarget(this.rtBright); renderer.clear(); this.quad.render(renderer);
-    // two separable blurs at quarter resolution
+    // two separable blurs at quarter resolution: a tight level (radius0, kept in rtB) then a wide one (radius, rtC)
+    // that only sees what is still above wideFloor after the tight level, so a thin streak stops at the tight
+    // glow while an extended bright area carries the wide halo (round 4)
     this.quad.material = this.blur;
     let src = this.rtBright;
     for (let i = 0; i < 2; i++) {
+      const step = 1 + (i === 0 ? this.radius0 : this.radius);
+      const dst = i === 0 ? this.rtB : this.rtC;
+      this.blur.uniforms.uFloor.value = i === 1 ? this.wideFloor : 0;
       this.blur.uniforms.tDiffuse.value = src.texture; this.blur.uniforms.uStep.value.set(step / this.qw, 0);
       renderer.setRenderTarget(this.rtA); renderer.clear(); this.quad.render(renderer);
+      this.blur.uniforms.uFloor.value = 0;
       this.blur.uniforms.tDiffuse.value = this.rtA.texture; this.blur.uniforms.uStep.value.set(0, step / this.qh);
-      renderer.setRenderTarget(this.rtB); renderer.clear(); this.quad.render(renderer);
-      src = this.rtB;
+      renderer.setRenderTarget(dst); renderer.clear(); this.quad.render(renderer);
+      src = dst;
     }
     // composite: a plain write into the write buffer (never an additive draw onto the read buffer)
-    this.comp.uniforms.tDiffuse.value = readBuffer.texture; this.comp.uniforms.tBloom.value = this.rtB.texture;
+    this.comp.uniforms.tDiffuse.value = readBuffer.texture; this.comp.uniforms.tTight.value = this.rtB.texture; this.comp.uniforms.tWide.value = this.rtC.texture;
     this.quad.material = this.comp;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     if (this.clear) renderer.clear();
     this.quad.render(renderer);
     renderer.autoClear = autoClear;
   }
-  dispose() { this.rtBright.dispose(); this.rtA.dispose(); this.rtB.dispose(); this.bright.dispose(); this.blur.dispose(); this.comp.dispose(); this.quad.dispose(); }
+  dispose() { this.rtBright.dispose(); this.rtA.dispose(); this.rtB.dispose(); this.rtC.dispose(); this.bright.dispose(); this.blur.dispose(); this.comp.dispose(); this.quad.dispose(); }
 }
 
 export function createPost(THREE, { renderer, scene, camera, tier }) {
@@ -270,7 +314,11 @@ export function createPost(THREE, { renderer, scene, camera, tier }) {
     ao.enabled = qAo > 0;
     composer.addPass(ao);
 
-    const bloom = new ThresholdBloomPass(THREE, size.x, size.y, { threshold: +(knob('bloomt') || BLOOM.threshold), strength: BLOOM.strength * qBloom, radius: BLOOM.radius });
+    const num = (name, d) => { const v = knob(name); const n = v === null ? NaN : parseFloat(v); return Number.isFinite(n) ? n : d; };
+    const bloom = new ThresholdBloomPass(THREE, size.x, size.y, {
+      threshold: num('bloomt', BLOOM.threshold), strength: BLOOM.strength * qBloom, radius: num('bloomr', BLOOM.radius),
+      radius0: num('bloomr0', BLOOM.radius0), cap: num('bloomcap', BLOOM.cap), wideFloor: num('bloomfloor', BLOOM.wideFloor),
+    });
     bloom.enabled = qBloom > 0;
     composer.addPass(bloom);
 

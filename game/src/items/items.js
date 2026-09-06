@@ -28,12 +28,12 @@
  * `viewShield: true` in the constructor hands the visual back to the view for an A/B.
  */
 import * as THREE from 'three';
-import { preloadAssets } from '../../assetlib.js?v=r3-20260906150928';
-import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r3-20260906150928';
-import { Projectiles } from './projectiles.js?v=r3-20260906150928';
-import { Hazards } from './hazards.js?v=r3-20260906150928';
-import { ShieldFX, dotTexture } from './shield.js?v=r3-20260906150928';
-import { ItemBoxFX } from './itembox.js?v=r3-20260906150928';
+import { preloadAssets } from '../../assetlib.js?v=r4-20260906171652';
+import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r4-20260906171652';
+import { Projectiles } from './projectiles.js?v=r4-20260906171652';
+import { Hazards } from './hazards.js?v=r4-20260906171652';
+import { ShieldFX, dotTexture } from './shield.js?v=r4-20260906171652';
+import { ItemBoxFX } from './itembox.js?v=r4-20260906171652';
 
 export const ITEMS = {
   buoy:       { asset: 'chaser_buoy',  speed: 34, lock: 60, life: 8,  hit: 'spin' },

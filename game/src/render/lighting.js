@@ -37,7 +37,7 @@
  *   rig.setFillOccluders([{ x, y, z, yaw, hw, hh, hd, strength }]);   optional, see FILL OCCLUDERS
  */
 import { CSM } from 'three/addons/csm/CSM.js';
-import { getTier } from './quality.js?v=r3-20260906150928';
+import { getTier } from './quality.js?v=r4-20260906171652';
 
 /** Sun placement, TRACK-PLAN section 1 and 9. */
 export const SUN_AZIMUTH_DEG = 250;
@@ -473,7 +473,7 @@ function occPatch(shader, uniforms) {
 /** The default occluder: the rock tunnel, from the level plan and the road axis through it. */
 async function defaultOccluders(THREE) {
   try {
-    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r3-20260906150928'), import('../track/spline.js?v=r3-20260906150928')]);
+    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r4-20260906171652'), import('../track/spline.js?v=r4-20260906171652')]);
     const t = pl.LANDMARKS && pl.LANDMARKS.tunnel, spline = sp.SPLINE;
     if (!t || !spline || typeof spline.nearest !== 'function') return [];
     const n = spline.nearest(t.x, t.z);
