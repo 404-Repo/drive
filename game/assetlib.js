@@ -28,7 +28,7 @@
  */
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { applySurfaces } from './surfaces.js?v=r1-20260906113009';
+import { applySurfaces } from './surfaces.js?v=r2-20260906125925';
 
 const cache = new Map();   // url -> Promise<prototype>
 

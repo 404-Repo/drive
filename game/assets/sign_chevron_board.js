@@ -2,6 +2,7 @@
 // rim as a rounded rectangle ring Shape extruded proud of the face, three chevron Shapes
 // extruded 0.02 with a lighter inner chevron, octagonal posts (8 segment cylinders) with
 // lathe foot collars, backing plate and brackets. Faces +Z, mounts back. No letters.
+// Round 2 (triangle budget, 31 placed): rounded corners at 2 curve segments. 1368 -> about 1000 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const C = (hex, dl, ds) => new THREE.Color(hex).offsetHSL(0, ds || 0, dl || 0);
@@ -11,7 +12,7 @@ export default function (THREE) {
   };
   const mesh = (geo, mat, x, y, z, parent) => { const o = new THREE.Mesh(geo, mat); o.position.set(x || 0, y || 0, z || 0); (parent || g).add(o); return o; };
   const box = (w, h, d, mat, x, y, z, parent) => mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z, parent);
-  const ext = (shape, depth) => new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 6 });
+  const ext = (shape, depth) => new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 2 });
   const rrect = (cx, cy, w, h, r, path) => {
     const s = path || new THREE.Shape(); const x = cx - w / 2, y = cy - h / 2;
     s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r);

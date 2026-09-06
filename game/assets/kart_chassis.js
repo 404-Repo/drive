@@ -7,6 +7,11 @@
 // exhausts with heat rings and glowing tips, a rear number disc on the cowl, a fatter rear
 // bumper with livery corner caps, and a livery tail band under the cowl. Height stays under
 // the 0.62 m spec plus tolerance (wing end plates top out at 0.65 m).
+// Round 2 (the critic: a toy with no highlight, a driver with no body): the wing drops to 0.47 m so
+// the seat back and the driver's torso, elbows and shoulders show above it from the chase camera;
+// the seat back carries a livery shell with a cream stripe; a framed rear number plate on the cowl
+// with a livery disc; the exhausts are polished metal (high metalness, low roughness) so the sun
+// lands on them; the seat socket moves to z -0.08 so the driver's gloves reach the wheel.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -26,7 +31,7 @@ export default function (THREE) {
   const cyl = (rt, rb, h, seg) => new THREE.CylinderGeometry(rt, rb, h, seg || 14);
   const tube = (parent, a, b, r, m, seg) => {
     const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b); const d = B.clone().sub(A); const L = d.length();
-    const o = new THREE.Mesh(cyl(r, r, L, seg || 10), m);
+    const o = new THREE.Mesh(cyl(r, r, L, seg || 8), m);
     o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
     o.position.copy(A).add(B).multiplyScalar(0.5); parent.add(o); return o;
   };
@@ -86,18 +91,20 @@ export default function (THREE) {
   const rubber = mat(null, 0x232528, 0.85, 0);
   const rubberL = mat(null, 0x30343a, 0.85, 0);
   const flare = mat(null, 0x3a3f46, 0.5, 0, { emissive: 0xffc48a, emissiveIntensity: 1.0 });
+  const chrome = mat('metal', 0xc9ced4, 0.22, 0.9);
+  const chromeD = mat('metal', 0x9aa0a8, 0.28, 0.9);
 
   // pan and frame
   mesh(g, sweepZ(rrect(0.56, 0.06, 0.02, 0, 0.03), 1.30, -0.05), pan);
   mesh(g, box(0.48, 0.012, 1.20), panL, 0, 0.066, -0.05);
   for (const sx of [-1, 1]) {
-    tube(g, [sx * 0.29, 0.085, -0.75], [sx * 0.29, 0.085, 0.65], 0.022, dark, 10);
-    tube(g, [sx * 0.29, 0.085, 0.65], [sx * 0.10, 0.085, 0.76], 0.022, dark, 10);
+    tube(g, [sx * 0.29, 0.085, -0.75], [sx * 0.29, 0.085, 0.65], 0.022, dark, 8);
+    tube(g, [sx * 0.29, 0.085, 0.65], [sx * 0.10, 0.085, 0.76], 0.022, dark, 8);
   }
-  tube(g, [-0.10, 0.085, 0.76], [0.10, 0.085, 0.76], 0.022, dark, 10);
-  tube(g, [-0.29, 0.085, -0.75], [0.29, 0.085, -0.75], 0.022, dark, 10);
+  tube(g, [-0.10, 0.085, 0.76], [0.10, 0.085, 0.76], 0.022, dark, 8);
+  tube(g, [-0.29, 0.085, -0.75], [0.29, 0.085, -0.75], 0.022, dark, 8);
   for (const z of [0.50, -0.50]) {
-    tube(g, [-0.60, 0.10, z], [0.60, 0.10, z], 0.025, dark, 10);
+    tube(g, [-0.60, 0.10, z], [0.60, 0.10, z], 0.025, dark, 8);
     for (const sx of [-1, 1]) mesh(g, cyl(0.042, 0.042, 0.05, 12), darkL, sx * 0.50, 0.10, z, 0, 0, PI / 2);
   }
 
@@ -124,10 +131,14 @@ export default function (THREE) {
   mesh(g, sweepX(seatS, 0.46, 0), rubber);
   mesh(g, box(0.16, 0.012, 0.36), rubberL, 0, 0.166, -0.16);
   mesh(g, box(0.16, 0.28, 0.012), rubberL, 0, 0.38, -0.406, -0.197);
+  // the seat back's outer shell in the livery, the surface the chase camera sees most
+  mesh(g, box(0.50, 0.36, 0.035), livD, 0, 0.36, -0.522, -0.10);
+  mesh(g, box(0.52, 0.03, 0.04), livL, 0, 0.54, -0.54, -0.10);
+  mesh(g, box(0.07, 0.30, 0.04), cream, 0, 0.36, -0.53, -0.10);
   for (const sx of [-1, 1]) {
     mesh(g, box(0.06, 0.32, 0.09), rubber, sx * 0.24, 0.38, -0.44, -0.197);
     mesh(g, box(0.06, 0.06, 0.28), rubber, sx * 0.24, 0.19, -0.15);
-    tube(g, [sx * 0.15, 0.06, -0.58], [sx * 0.15, 0.50, -0.58], 0.02, dark, 10);
+    tube(g, [sx * 0.15, 0.06, -0.58], [sx * 0.15, 0.50, -0.58], 0.02, dark, 8);
   }
   const hrPts = [[0, -0.215], [0.05, -0.20], [0.07, -0.17], [0.075, -0.14], [0.075, 0.14], [0.07, 0.17], [0.05, 0.20], [0, 0.215]].map((p) => new THREE.Vector2(p[0], p[1]));
   mesh(g, new THREE.LatheGeometry(hrPts, 14), rubberL, 0, 0.545, -0.56, 0, 0, PI / 2);
@@ -163,7 +174,7 @@ export default function (THREE) {
   }
 
   // steering
-  tube(g, [0, 0.186, 0.518], [0, 0.50, 0.14], 0.02, dark, 10);
+  tube(g, [0, 0.186, 0.518], [0, 0.50, 0.14], 0.02, dark, 8);
   const steer = new THREE.Group(); steer.name = 'joint_steer'; steer.position.set(0, 0.52, 0.12); steer.rotation.x = 0.698; g.add(steer);
   mesh(steer, new THREE.TorusGeometry(0.12, 0.022, 10, 20), teal, 0, 0, 0);
   const hubPts = [[0, 0], [0.045, 0], [0.05, 0.01], [0.05, 0.03], [0.03, 0.04], [0, 0.04]].map((p) => new THREE.Vector2(p[0], p[1]));
@@ -191,29 +202,31 @@ export default function (THREE) {
   for (const sx of [-1, 1]) {
     const pts = [new THREE.Vector3(sx * 0.10, 0.24, -0.70), new THREE.Vector3(sx * 0.15, 0.27, -0.80), new THREE.Vector3(sx * 0.19, 0.36, -0.88)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    mesh(g, new THREE.TubeGeometry(curve, 8, 0.042, 12, false), dark);
+    mesh(g, new THREE.TubeGeometry(curve, 8, 0.042, 12, false), chrome);
     const tan = curve.getTangent(1); const end = pts[2];
     const tip = mesh(g, cyl(0.03, 0.03, 0.014, 14), flare, end.x, end.y, end.z); tip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan);
-    const ring = mesh(g, cyl(0.05, 0.05, 0.026, 14), darkL, end.x, end.y, end.z); ring.quaternion.copy(tip.quaternion);
+    const ring = mesh(g, cyl(0.05, 0.05, 0.026, 14), chromeD, end.x, end.y, end.z); ring.quaternion.copy(tip.quaternion);
     // a heat ring half way along the pipe, lighter metal
     const mid = curve.getPoint(0.55), midT = curve.getTangent(0.55);
-    const hr = mesh(g, cyl(0.05, 0.05, 0.02, 14), darkL, mid.x, mid.y, mid.z); hr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), midT);
+    const hr = mesh(g, cyl(0.05, 0.05, 0.02, 14), chromeD, mid.x, mid.y, mid.z); hr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), midT);
   }
-  // rear number disc on the cowl's back face
-  mesh(g, cyl(0.10, 0.10, 0.012, 20), dark, 0, 0.245, -0.805, PI / 2);
-  mesh(g, cyl(0.085, 0.085, 0.016, 20), cream, 0, 0.245, -0.81, PI / 2);
-  mesh(g, cyl(0.03, 0.03, 0.01, 12), liv, 0, 0.245, -0.822, PI / 2);
+  // rear number plate on the cowl's back face: dark frame, cream plate, livery disc, two bolts
+  mesh(g, box(0.34, 0.20, 0.012), dark, 0, 0.255, -0.806);
+  mesh(g, box(0.31, 0.17, 0.016), cream, 0, 0.255, -0.812);
+  mesh(g, cyl(0.055, 0.055, 0.012, 16), liv, 0, 0.255, -0.824, PI / 2);
+  mesh(g, box(0.31, 0.03, 0.017), livD, 0, 0.335, -0.812);
+  for (const sx of [-1, 1]) mesh(g, cyl(0.012, 0.012, 0.01, 6), darkL, sx * 0.135, 0.31, -0.826, PI / 2);
   // rear wing: two raked struts off the cowl, a 1.0 m blade with a bleached top, painted edge tubes, dark end plates
-  const wingY = 0.565, wingZ = -0.72;
-  for (const sx of [-1, 1]) tube(g, [sx * 0.22, 0.34, -0.64], [sx * 0.22, wingY - 0.01, wingZ + 0.03], 0.02, dark, 10);
+  const wingY = 0.47, wingZ = -0.72;
+  for (const sx of [-1, 1]) tube(g, [sx * 0.22, 0.36, -0.62], [sx * 0.22, wingY - 0.01, wingZ + 0.03], 0.02, dark, 8);
   const wingProfile = new THREE.Shape();   // (z, y) side profile of the blade: a thin aerofoil, thicker at the front
   wingProfile.moveTo(wingZ + 0.13, wingY - 0.012); wingProfile.quadraticCurveTo(wingZ + 0.14, wingY + 0.02, wingZ + 0.10, wingY + 0.03);
   wingProfile.lineTo(wingZ - 0.10, wingY + 0.008); wingProfile.quadraticCurveTo(wingZ - 0.13, wingY + 0.004, wingZ - 0.13, wingY - 0.008);
   wingProfile.lineTo(wingZ + 0.13, wingY - 0.012); wingProfile.closePath();
   sweepXTwoTone(wingProfile, 1.00, 0, liv, livL);
   for (const sx of [-1, 1]) {
-    mesh(g, box(0.024, 0.13, 0.28), dark, sx * 0.51, wingY + 0.04, wingZ);
-    mesh(g, box(0.026, 0.012, 0.29), darkL, sx * 0.51, wingY + 0.105, wingZ);
+    mesh(g, box(0.024, 0.11, 0.28), dark, sx * 0.51, wingY + 0.03, wingZ);
+    mesh(g, box(0.026, 0.012, 0.29), darkL, sx * 0.51, wingY + 0.085, wingZ);
   }
   tube(g, [-0.50, wingY + 0.03, wingZ + 0.10], [0.50, wingY + 0.03, wingZ + 0.10], 0.012, livL, 8);
   tube(g, [-0.50, wingY + 0.008, wingZ - 0.11], [0.50, wingY + 0.008, wingZ - 0.11], 0.012, livL, 8);
@@ -231,7 +244,7 @@ export default function (THREE) {
   g.userData.sockets = {
     wheelFL: sock('wheelFL', -0.60, 0.10, 0.50), wheelFR: sock('wheelFR', 0.60, 0.10, 0.50),
     wheelRL: sock('wheelRL', -0.60, 0.10, -0.50), wheelRR: sock('wheelRR', 0.60, 0.10, -0.50),
-    seat: sock('seat', 0, 0.16, -0.20), exhaustL: sock('exhaustL', -0.19, 0.36, -0.88), exhaustR: sock('exhaustR', 0.19, 0.36, -0.88),
+    seat: sock('seat', 0, 0.16, -0.08), exhaustL: sock('exhaustL', -0.19, 0.36, -0.88), exhaustR: sock('exhaustR', 0.19, 0.36, -0.88),
     itemHold: sock('itemHold', 0, 1.11, -0.45),
   };
   g.userData.joints = { steer };

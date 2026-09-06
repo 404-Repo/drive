@@ -4,6 +4,7 @@
 // cone cap and a shackle ring on top (the post and ring together 0.32 m), a short rope stub
 // hanging from a dark eye under the base. Joint: body, pivot at the sphere centre (the
 // waterline), for the bob and tilt.
+// Round 2 (triangle budget, 8 placed): sphere 16 x 11, rings at 16, rubber torus 5 x 14. 1736 -> about 1200 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const col = (hex, l = 0, s = 0) => new THREE.Color(hex).offsetHSL(0, s, l);
@@ -27,13 +28,13 @@ export default function (THREE) {
   const R = 0.45, ROPE = 0.07;
   const body = new THREE.Group(); body.name = 'buoy_body'; body.position.set(0, ROPE + R, 0); g.add(body);
   // Sphere in three colour zones: lower red (darker), whitewash band, upper red, crown disc.
-  add(body, new THREE.SphereGeometry(R, 20, 14), red, 0, 0, 0);
-  add(body, new THREE.SphereGeometry(R + 0.004, 20, 6, 0, Math.PI * 2, Math.PI * 0.68, Math.PI * 0.32), redBase, 0, 0, 0);
-  add(body, new THREE.CylinderGeometry(R + 0.012, R + 0.012, 0.2, 20), white, 0, 0.0, 0);
-  add(body, new THREE.CylinderGeometry(R + 0.014, R + 0.014, 0.015, 20), whiteTop, 0, 0.1, 0);
-  add(body, new THREE.CylinderGeometry(0.2, 0.26, 0.04, 20), redTop, 0, R - 0.06, 0);
+  add(body, new THREE.SphereGeometry(R, 16, 11), red, 0, 0, 0);
+  add(body, new THREE.SphereGeometry(R + 0.004, 16, 5, 0, Math.PI * 2, Math.PI * 0.68, Math.PI * 0.32), redBase, 0, 0, 0);
+  add(body, new THREE.CylinderGeometry(R + 0.012, R + 0.012, 0.2, 16), white, 0, 0.0, 0);
+  add(body, new THREE.CylinderGeometry(R + 0.014, R + 0.014, 0.015, 16), whiteTop, 0, 0.1, 0);
+  add(body, new THREE.CylinderGeometry(0.2, 0.26, 0.04, 16), redTop, 0, R - 0.06, 0);
   // Rubber skirt at the waterline, standing proud of the sphere, and a dark base eye with the rope stub.
-  add(body, new THREE.TorusGeometry(R * 0.74, 0.045, 6, 20), rubber, 0, -R * 0.6, 0, Math.PI / 2, 0, 0);
+  add(body, new THREE.TorusGeometry(R * 0.74, 0.045, 5, 14), rubber, 0, -R * 0.6, 0, Math.PI / 2, 0, 0);
   add(body, new THREE.CylinderGeometry(0.05, 0.06, 0.06, 10), iron, 0, -R - 0.01, 0);
   add(body, new THREE.CylinderGeometry(0.022, 0.03, ROPE, 8), rope, 0, -R - ROPE / 2 - 0.01, 0);
   add(body, new THREE.SphereGeometry(0.035, 8, 6), rope, 0, -R - ROPE, 0);

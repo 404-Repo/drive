@@ -3,6 +3,8 @@
 // blocks (a back plate plus a proud face panel per block, so each stone reads chunky) in two
 // courses over a cooler stone shade base course. Ladder recessed beside the -X pilaster, two
 // rings, a rubber fender on the coping edge. 6 x 1.2 x 1.6 m, water is -Z, back mounts.
+// Round 2 (triangle budget, 33 placed): one back plate per course instead of per block, rings 5 x 10,
+// ladder loops 4 x 6, rods at 6 segments, fender at 8. 1960 -> about 1300 tris, same silhouette.
 export default function (THREE) {
   const g = new THREE.Group();
   const col = (hex, l = 0, s = 0) => new THREE.Color(hex).offsetHSL(0, s, l);
@@ -31,14 +33,14 @@ export default function (THREE) {
   bx(g, L - 2 * PW, H - COP, D - 0.12, mortar, 0, (H - COP) / 2, zF + 0.12 + (D - 0.12) / 2);
   // Pillowed block: back plate full size, proud face panel inset 4 cm all round.
   const block = (x, y, z, w, h, m, proud) => {
-    bx(g, w - 0.03, h - 0.03, 0.08, m, x, y, z + 0.04);
-    bx(g, w - 0.11, h - 0.11, proud, m, x, y, z - proud / 2 + 0.001);
+    bx(g, w - 0.11, h - 0.11, proud + 0.08, m, x, y, z - proud / 2 + 0.041);
   };
   // Base course 0..0.4 in shade, then two courses 0.4 tall of blocks 0.9 long between pilasters.
   const x0 = -L / 2 + PW, x1 = L / 2 - PW, span = x1 - x0;   // 4.6
   for (let ci = 0; ci < 3; ci++) {
     const y = ci * 0.4 + 0.2;
     const n = ci % 2 ? 5 : 6;
+    bx(g, span, 0.4 - 0.03, 0.08, ci === 0 ? shade : stones[ci], 0, y, zF + 0.04);   // the course's back plate
     const bl = span / n;
     for (let i = 0; i < n; i++) {
       const m = ci === 0 ? shade : stones[Math.floor(rnd() * stones.length)];
@@ -70,24 +72,24 @@ export default function (THREE) {
   add(g, new THREE.CylinderGeometry(0.2, 0.2, span, 14, 1, false, 0, Math.PI), stoneTop, 0, H - 0.2, zF + 0.2, 0, Math.PI, Math.PI / 2);
   bx(g, span, COP - 0.2, 0.2, stones[0], 0, H - COP + (COP - 0.2) / 2, zF + 0.1);
   // Fender: rubber strip along the nose between the pilasters.
-  add(g, new THREE.CylinderGeometry(0.075, 0.075, span - 0.05, 10), rubber, 0, H - 0.06, zF + 0.05, 0, 0, Math.PI / 2);
+  add(g, new THREE.CylinderGeometry(0.075, 0.075, span - 0.05, 8), rubber, 0, H - 0.06, zF + 0.05, 0, 0, Math.PI / 2);
   bx(g, span - 0.05, 0.15, 0.06, rubber, 0, H - 0.06, zF + 0.08);
 
   // Ladder beside the -X pilaster, recessed into the face.
   const lx = x0 + 0.4;
   bx(g, 0.62, H - COP - 0.02, 0.16, mortar, lx, (H - COP) / 2, zF + 0.08);
-  for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(0.03, 0.03, H - 0.1, 8), iron, lx + s * 0.25, (H - 0.1) / 2 + 0.05, zF + 0.05);
-  for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(0.025, 0.025, 0.5, 8), iron, lx, 0.25 + i * 0.3, zF + 0.05, 0, 0, Math.PI / 2);
+  for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(0.03, 0.03, H - 0.1, 6), iron, lx + s * 0.25, (H - 0.1) / 2 + 0.05, zF + 0.05);
+  for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), iron, lx, 0.25 + i * 0.3, zF + 0.05, 0, 0, Math.PI / 2);
   for (const s of [-1, 1]) {
-    add(g, new THREE.TorusGeometry(0.12, 0.03, 6, 10, Math.PI / 2), iron, lx + s * 0.25, H - 0.05 - 0.12, zF + 0.05 + 0.12, 0, Math.PI / 2, 0);
-    add(g, new THREE.CylinderGeometry(0.03, 0.03, 0.25, 8), iron, lx + s * 0.25, H - 0.05, zF + 0.05 + 0.12 + 0.125, Math.PI / 2, 0, 0);
+    add(g, new THREE.TorusGeometry(0.12, 0.03, 4, 6, Math.PI / 2), iron, lx + s * 0.25, H - 0.05 - 0.12, zF + 0.05 + 0.12, 0, Math.PI / 2, 0);
+    add(g, new THREE.CylinderGeometry(0.03, 0.03, 0.25, 6), iron, lx + s * 0.25, H - 0.05, zF + 0.05 + 0.12 + 0.125, Math.PI / 2, 0, 0);
   }
   // Two rings on plates.
   for (const rx of [-0.3, 1.5]) {
     bx(g, 0.2, 0.2, 0.04, iron, rx, 0.95, zF - 0.06);
     bx(g, 0.2, 0.02, 0.05, ironEdge, rx, 1.04, zF - 0.06);
-    add(g, new THREE.CylinderGeometry(0.03, 0.03, 0.06, 8), iron, rx, 0.95, zF - 0.1, Math.PI / 2, 0, 0);
-    add(g, new THREE.TorusGeometry(0.11, 0.025, 6, 14), iron, rx, 0.95 - 0.11, zF - 0.12);
+    add(g, new THREE.CylinderGeometry(0.03, 0.03, 0.06, 6), iron, rx, 0.95, zF - 0.1, Math.PI / 2, 0, 0);
+    add(g, new THREE.TorusGeometry(0.11, 0.025, 5, 10), iron, rx, 0.95 - 0.11, zF - 0.12);
   }
 
   g.userData.mounts = 'front';   // +Z is the land side, against the quay fill; water is -Z

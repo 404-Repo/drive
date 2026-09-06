@@ -1,6 +1,7 @@
 // harbour_bollard c1: lathe profile. The whole cast body (base flare, tapered shaft, neck, mushroom cap with a rounded
 // rim and a flat top) is one revolved profile; the darker base band and the whitewash band are short revolved sleeves
 // a few millimetres proud; a whitewash disc sits in the cap top. Square plate with a chamfer step and hex bolts.
+// Round 2 (triangle budget, 40 placed): lathes at 12 segments. 678 -> about 580 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -29,11 +30,11 @@ export default function (THREE) {
   mesh(g, lathe([
     [0, 0.08], [0.165, 0.08], [0.16, 0.12], [0.15, 0.20], [0.128, 0.55], [0.12, 0.70], [0.125, 0.745],
     [0.16, 0.765], [0.195, 0.79], [0.20, 0.82], [0.185, 0.86], [0.145, 0.89], [0.10, 0.90], [0, 0.90],
-  ], 14), dark, 0, 0, 0);
+  ], 12), dark, 0, 0, 0);
   // base band sleeve, darker and cooler
-  mesh(g, lathe([[0.163, 0.081], [0.168, 0.081], [0.153, 0.20], [0.148, 0.20]], 14), darkBase, 0, 0, 0);
+  mesh(g, lathe([[0.163, 0.081], [0.168, 0.081], [0.153, 0.20], [0.148, 0.20]], 12), darkBase, 0, 0, 0);
   // whitewash band sleeve under the cap
-  mesh(g, lathe([[0.1305, 0.53], [0.1355, 0.53], [0.1245, 0.68], [0.1195, 0.68]], 14), white, 0, 0, 0);
+  mesh(g, lathe([[0.1305, 0.53], [0.1355, 0.53], [0.1245, 0.68], [0.1195, 0.68]], 12), white, 0, 0, 0);
   // whitewash disc in the cap top
   mesh(g, new THREE.CircleGeometry(0.105, 14), white, 0, 0.904, 0, -PI / 2, 0, 0);
 

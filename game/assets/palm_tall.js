@@ -7,6 +7,7 @@
 // date bunch. The stem end of each picture (u = 1 on frond a and c, u = 0 on frond b, checked
 // on the atlas) is put at the crown end of the card. Round 1's critic read the c2 crown as flat
 // blades; from an oblique motion frame this one is a mass of individual arching fronds.
+// Round 2 (triangle budget, 30 placed): trunk rings at 8 segments (the trunk is 0.4 m across). 2370 -> about 2050 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const DS = THREE.DoubleSide;
@@ -50,8 +51,8 @@ export default function (THREE) {
     const rb = 0.25 - 0.075 * t0, rt = 0.25 - 0.075 * t1;
     const y = i * H, x = lean((i + 0.5) / N);
     const mat = y < 0.72 ? tBase : (i % 2 ? tA : tB);
-    put(new THREE.CylinderGeometry(rt * 0.95, rb, H, 10), mat, x, y + H / 2, 0);
-    put(new THREE.CylinderGeometry(rt * 1.04, rt * 1.04, 0.05, 10, 1, true), lip, x, y + H - 0.03, 0);
+    put(new THREE.CylinderGeometry(rt * 0.95, rb, H, 8), mat, x, y + H / 2, 0);
+    put(new THREE.CylinderGeometry(rt * 1.04, rt * 1.04, 0.05, 8, 1, true), lip, x, y + H - 0.03, 0);
     // boot wedge on alternating sides
     const side = (i % 4) * Math.PI / 2 + 0.4;
     const r = rb * 0.95;

@@ -4,9 +4,10 @@
  * Colliders are 2D footprints in xz with a height band: oriented boxes, cylinders and wall
  * segments, in a spatial hash (8 m cells). The ground is the road ribbon first (road.probe:
  * road surface, kerb substrate, pavement, shoulder, apron, quay), then the terrain, then water
- * below y -1.0. Karts slide along walls keeping 60 percent of the tangential speed and 20
- * percent of the normal speed as a small bounce; the ground normal is returned so the kart
- * tilts on banks. Gravity is the caller's.
+ * below y -1.0. Karts slide along walls: a hit (3 m/s or more into the wall) keeps 60 percent of
+ * the tangential speed and bounces with 20 percent of the normal speed, a graze at a shallow
+ * angle keeps its speed and loses only the normal part; the ground normal is returned so the
+ * kart tilts on banks. Gravity is the caller's.
  *
  * The guard wall of the cliff road is registered here from the road's wall stations (tag
  * 'guardwall', the three fall gaps open) so the circuit is drivable before the level builds;
@@ -16,10 +17,11 @@
  * addCylinder; addWallSegment takes the two base points and the height.
  */
 import * as THREE from 'three';
-import { yAt } from './road.js?v=r1-20260906113009';
+import { yAt } from './road.js?v=r2-20260906125925';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const KART_BAND = { lo: 0.12, hi: 1.0 };   // colliders whose top is under lo above the kart's y are driven over
+const WALL_LOSS = 0.4, WALL_BOUNCE = 0.2, WALL_HIT_SPEED = 3.0;   // plan section 6: 40 percent loss and a small bounce on a hit; a graze keeps its speed
 
 export class World {
   constructor(terrain, spline, road) {
@@ -176,9 +178,16 @@ export class World {
         pos.x += h.nx * h.pen; pos.z += h.nz * h.pen;
         const vn = vel.x * h.nx + vel.z * h.nz;
         if (vn < 0) {
+          // A HIT (square into the wall, 3 m/s or more along the normal) loses 40 percent along the wall and bounces
+          // 20 percent; a GRAZE (a kart steering along a wall at a shallow angle, a few tenths of a m/s into it) only
+          // loses the normal part, scaled by how hard it came in. Round 2 fix 102: the loss used to apply every frame
+          // the kart touched the wall, so a kart running the rise verge into the east retaining wall at 25 degrees
+          // stalled dead against it (work/fix2_track/verge_probe.mjs: 13.6 m/s to 0 in one tick); now it slides.
+          const hard = Math.min(1, -vn / WALL_HIT_SPEED);
+          const keep = 1 - WALL_LOSS * hard;
           const tx = vel.x - vn * h.nx, tz = vel.z - vn * h.nz;
-          vel.x = tx * 0.6 + h.nx * (-vn) * 0.2;
-          vel.z = tz * 0.6 + h.nz * (-vn) * 0.2;
+          vel.x = tx * keep + h.nx * (-vn) * WALL_BOUNCE * hard;
+          vel.z = tz * keep + h.nz * (-vn) * WALL_BOUNCE * hard;
         }
         hitWall = true;
         wallNormal = wallNormal || new THREE.Vector3();

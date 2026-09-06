@@ -1,6 +1,8 @@
 // tyre_wall c1: lathe profiles. Each tyre is one revolved section with rounded shoulders, a flat tread and the inner
 // hole wall in the same profile, twelve of them three columns by four high (2.0 x 0.7 x 1.2). Belts are extruded
 // rounded rectangle rings; straps are boxes. Bottom row darkest, top row lightest, a warm shoulder ring on the top row.
+// Round 2 (triangle budget): 10 radial segments (the TSV band for a 0.6 m tyre), the lower rows' hidden bottom
+// shoulder and hole wall dropped from the profile, belt corners at 3 curve segments. 2522 -> about 1500 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -20,12 +22,12 @@ export default function (THREE) {
   const redBelt = mat('fabric', 0xd6402f, 0.7);
   const strap = mat('metal', 0x3a3f46, 0.5, 0.2);
 
-  const R = 0.30, RI = 0.17, TH = 0.29, SEG = 14;
+  const R = 0.30, RI = 0.17, TH = 0.29, SEG = 10;
   const h = TH / 2;
   // profile (radius, y): inner bottom, out along the bottom, up the rounded shoulder, flat tread, top shoulder, in along the top, down the hole
   const tyreGeo = lathe([[RI, -h], [0.25, -h], [R, -h + 0.06], [R, h - 0.06], [0.25, h], [RI, h], [RI, -h]], SEG);
   // lower rows: the hole wall is hidden by the tyre above, so the profile stops at the top inner edge
-  const tyreLowGeo = lathe([[RI, -h], [0.25, -h], [R, -h + 0.06], [R, h - 0.06], [0.25, h], [RI, h]], SEG);
+  const tyreLowGeo = lathe([[0.25, -h], [R, -h + 0.06], [R, h - 0.06], [0.25, h], [RI, h]], SEG);
   const shoulderGeo = new THREE.RingGeometry(RI + 0.005, 0.245, SEG, 1);
   const discGeo = new THREE.CircleGeometry(RI, SEG);
   const cols = [-0.64, 0, 0.64];
@@ -51,9 +53,9 @@ export default function (THREE) {
       s.absarc(-hwid + rad, 0, rad, PI / 2, PI * 1.5, false);
       return s;
     };
-    const outer = new THREE.Shape(rr(hw + t, hd + t, hd + t).getPoints(6));
-    outer.holes.push(new THREE.Path(rr(hw, hd, hd).getPoints(6)));
-    const geo = new THREE.ExtrudeGeometry(outer, { depth: hgt, bevelEnabled: false, curveSegments: 6 });
+    const outer = new THREE.Shape(rr(hw + t, hd + t, hd + t).getPoints(4));
+    outer.holes.push(new THREE.Path(rr(hw, hd, hd).getPoints(4)));
+    const geo = new THREE.ExtrudeGeometry(outer, { depth: hgt, bevelEnabled: false, curveSegments: 3 });
     const o = new THREE.Mesh(geo, m); o.rotation.x = -PI / 2; o.position.y = y0; g.add(o); return o;
   };
   belt(TH * 3 + 0.06, 0.15, whiteBelt);

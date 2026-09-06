@@ -27,10 +27,15 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r1-20260906113009';
+import { getTier } from './quality.js?v=r2-20260906125925';
 
-/** Bloom threshold in linear HDR: lit whitewash measures 0.62 to 0.72 (work/render/NOTES.md), so only brighter pixels bloom. */
-export const BLOOM = { threshold: 0.92, strength: 0.28, radius: 0.35 };
+/**
+ * Bloom threshold in linear HDR. Round 1: lit whitewash measured 0.62 to 0.72 and the threshold was 0.92. Round 2
+ * runs the sun at 12 (lighting.js), which puts lit whitewash at about 3.0 linear before the ACES curve, so the
+ * threshold is 4.0: no diffuse surface blooms, only the sun's specular hot spots on paint and wet kerb tops,
+ * additive flares and the sun disc (`?bloomt=` for the A/B).
+ */
+export const BLOOM = { threshold: 4.0, strength: 0.28, radius: 0.35 };
 export const GRADE = { shadowCool: [0.975, 0.99, 1.045], highlightWarm: [1.04, 1.01, 0.965] };   // each channel within 6 percent of 1
 export const SPEED_LINES_MAX = 0.22;
 
@@ -265,7 +270,7 @@ export function createPost(THREE, { renderer, scene, camera, tier }) {
     ao.enabled = qAo > 0;
     composer.addPass(ao);
 
-    const bloom = new ThresholdBloomPass(THREE, size.x, size.y, { threshold: BLOOM.threshold, strength: BLOOM.strength * qBloom, radius: BLOOM.radius });
+    const bloom = new ThresholdBloomPass(THREE, size.x, size.y, { threshold: +(knob('bloomt') || BLOOM.threshold), strength: BLOOM.strength * qBloom, radius: BLOOM.radius });
     bloom.enabled = qBloom > 0;
     composer.addPass(bloom);
 

@@ -4,6 +4,9 @@
 // the fifth reaches out for the overhang. Each carries a thin lighter cap extrusion inset 3
 // percent (bleached top). Lower third stone shade. Dark fissure extrusions, grass tufts on
 // ledges, an agave of extruded leaves on top.
+// Round 2 (triangle budget, 71 placed): the bleached cap of each stratum is a flat shape lying on the
+// body's top (its 9 cm sides were hidden inside the stratum above), the agave leaves are 5 point
+// outlines with a flat inner leaf. 1266 -> about 700 tris, outline and silhouette unchanged.
 export default function (THREE) {
   const g = new THREE.Group();
   const DS = THREE.DoubleSide;
@@ -54,7 +57,7 @@ export default function (THREE) {
     return best;
   };
   const slab = (rx, rz, k, h, mat, cx, cz, scale) => {
-    const geo = new THREE.ExtrudeGeometry(outline(rx, rz, k, scale, cx), { depth: h, bevelEnabled: false });
+    const geo = h > 0 ? new THREE.ExtrudeGeometry(outline(rx, rz, k, scale, cx), { depth: h, bevelEnabled: false }) : new THREE.ShapeGeometry(outline(rx, rz, k, scale, cx));
     geo.rotateX(-Math.PI / 2);   // shape y -> world -z, depth -> world +y
     geo.computeVertexNormals();
     return put(geo, mat, cx, 0, cz);
@@ -70,8 +73,8 @@ export default function (THREE) {
   layers.forEach((L, k) => {
     const body = slab(L.rx, L.rz, k, L.h, L.mat, L.cx, 0);
     body.position.set(L.cx, L.y, 0);
-    const top = slab(L.rx, L.rz, k, 0.09, L.capM, L.cx, 0, 0.97);
-    top.position.set(L.cx, L.y + L.h - 0.09, 0);
+    const top = slab(L.rx, L.rz, k, 0, L.capM, L.cx, 0, 0.97);
+    top.position.set(L.cx, L.y + L.h + 0.005, 0);
   });
   // fissures
   // fissures: dark strips seated on the face of the layer they sit in, proud by 3 cm
@@ -86,18 +89,18 @@ export default function (THREE) {
   // agave of extruded leaves on top
   const leafShape = (w, L) => {
     const s = new THREE.Shape();
-    s.moveTo(-w / 2, 0); s.lineTo(-w * 0.52, L * 0.2); s.lineTo(-w * 0.36, L * 0.6); s.lineTo(0, L);
-    s.lineTo(w * 0.36, L * 0.6); s.lineTo(w * 0.52, L * 0.2); s.lineTo(w / 2, 0); s.closePath();
+    s.moveTo(-w / 2, 0); s.lineTo(-w * 0.4, L * 0.5); s.lineTo(0, L);
+    s.lineTo(w * 0.4, L * 0.5); s.lineTo(w / 2, 0); s.closePath();
     return s;
   };
   const leafOuter = new THREE.ExtrudeGeometry(leafShape(0.2, 0.75), { depth: 0.03, bevelEnabled: false });
-  const inner = new THREE.ExtrudeGeometry(leafShape(0.15, 0.7), { depth: 0.05, bevelEnabled: false });
+  const inner = new THREE.ShapeGeometry(leafShape(0.15, 0.7));
   const ax = -0.8, az = 0.1, ay = 6.98;
   for (let i = 0; i < 9; i++) {
     const a = i * Math.PI * 2 / 9, pitch = i % 2 ? -0.5 : -0.9;
     const j = new THREE.Group(); j.position.set(ax + Math.cos(a) * 0.12, ay, az + Math.sin(a) * 0.12); j.rotation.order = 'YXZ'; j.rotation.set(pitch, -a + Math.PI / 2, 0); g.add(j);
     put(leafOuter, agaveEdge, 0, 0, -0.015, 0, 0, 0, j);
-    put(inner, agave, 0, 0.02, -0.025, 0, 0, 0, j);
+    put(inner, agave, 0, 0.02, 0.016, 0, 0, 0, j);
   }
 
   g.userData.mounts = 'back';

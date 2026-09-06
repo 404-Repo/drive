@@ -1,6 +1,12 @@
-// driver_racer c0 (pass 2, knees, boots and glove reach pulled back 3 cm for depth): primitive assembly. Sphere helmet with partial sphere visor band and
-// stripe, box chest with piping, capsule limbs, sphere gloves. Joints: torso at the hips,
-// head at the helmet base, upperArmL/R at the shoulders, forearmL/R at the elbows.
+// driver_racer (round 2 hero rebuild): a stocky helmeted racer that reads as a BODY from the
+// chase camera, not a ball on a seat. Wide shoulder yoke and pads rise 0.17 m above the seat
+// back, elbows sit outside the torso silhouette so both arms show from behind, forearms run in
+// to oversized gloves on the wheel, knees up with boots under the cowl. Helmet 0.34 m: a
+// mirrored visor (metalness so it catches the sky), a painted gleam strip on the visor, a
+// chin guard, a top fin, a rear lip and the livery stripe over the crown. Joints exactly as the
+// TSV: torso at the hips, head at the helmet base, upperArmL/R at the shoulders, forearmL/R at
+// the elbows; geometry is a child of each joint so the pivot is the joint. Base at the seat,
+// faces +Z.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -15,12 +21,21 @@ export default function (THREE) {
   // a capsule limb from a to b in the parent's frame, caps overlapping both joints
   const limb = (parent, a, b, r, m, seg) => {
     const A = V(a), B = V(b); const d = B.clone().sub(A); const L = d.length();
-    const o = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, seg || 12), m);
+    const o = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 3, seg || 10), m);
     o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
     o.position.copy(A).add(B).multiplyScalar(0.5); parent.add(o); return o;
   };
+  // a ring (band) around a limb from a toward b, centred at t along it
+  const band = (parent, a, b, t, r, h, m, seg) => {
+    const A = V(a), B = V(b); const d = B.clone().sub(A);
+    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg || 10), m);
+    o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
+    o.position.copy(A).add(d.multiplyScalar(t)); parent.add(o); return o;
+  };
   const joint = (parent, name, x, y, z) => { const j = new THREE.Group(); j.name = 'joint_' + name; j.position.set(x, y, z); parent.add(j); return j; };
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const DS = { side: THREE.DoubleSide };
+
   const suit = mat('fabric', 0xf1e6d2, 0.8, 0);
   const suitD = mat('fabric', 0xd2c7b2, 0.82, 0);
   const accent = mat('fabric', 0xed5851, 0.8, 0);
@@ -28,63 +43,89 @@ export default function (THREE) {
   const helmet = mat('metal', 0xed5851, 0.35, 0.15);
   const helmetStripe = mat('metal', 0xf1e6d2, 0.35, 0.15, DS);
   const trim = mat('metal', 0x3a3f46, 0.45, 0.25);
+  const trimL = mat('metal', 0x4a505a, 0.45, 0.25);
   const boot = mat(null, 0x232528, 0.85, 0);
   const visorBack = mat(null, 0x232528, 0.6, 0, DS);
-  const visor = mat(null, 0x8fa9d6, 0.15, 0, { transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-  // pelvis, lap and legs stay with the kart; the torso joint leans above them
-  mesh(g, new THREE.BoxGeometry(0.36, 0.16, 0.30), suitD, 0, 0.09, 0.03);
-  mesh(g, new THREE.BoxGeometry(0.30, 0.012, 0.24), suit, 0, 0.172, 0.03);
-  mesh(g, new THREE.BoxGeometry(0.34, 0.05, 0.31), trim, 0, 0.155, 0.03);
+  // the visor: the one mirrored surface the style lock allows. Unnamed and transparent so the
+  // surface pass leaves it alone; metalness makes the sky and the sun land on it.
+  const visor = mat(null, 0x8fa9d6, 0.10, 0.55, { transparent: true, opacity: 0.88, side: THREE.DoubleSide, envMapIntensity: 3.0 });
+  // a painted gleam across the top of the visor, the hand painted highlight of the style lock
+  const gleam = mat(null, 0xf1e6d2, 0.3, 0, { transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+
+  // ---- pelvis, belt and legs: fixed to the seat, the torso leans above them
+  mesh(g, box(0.40, 0.16, 0.30), suitD, 0, 0.09, 0.02);
+  mesh(g, box(0.42, 0.05, 0.32), trim, 0, 0.165, 0.02);
+  mesh(g, box(0.09, 0.05, 0.02), accent, 0, 0.165, 0.185);
   for (const sx of [-1, 1]) {
-    limb(g, [sx * 0.10, 0.12, 0.05], [sx * 0.11, 0.24, 0.25], 0.07, suit);
-    limb(g, [sx * 0.11, 0.24, 0.25], [sx * 0.11, 0.08, 0.32], 0.06, accent);
-    mesh(g, new THREE.SphereGeometry(0.075, 12, 8), suit, sx * 0.11, 0.24, 0.25);
-    mesh(g, new THREE.BoxGeometry(0.11, 0.09, 0.16), boot, sx * 0.11, 0.055, 0.335);
-    mesh(g, new THREE.BoxGeometry(0.114, 0.05, 0.05), accent, sx * 0.11, 0.06, 0.395);
+    const hip = [sx * 0.11, 0.12, 0.06], knee = [sx * 0.125, 0.27, 0.24], ankle = [sx * 0.125, 0.10, 0.32];
+    limb(g, hip, knee, 0.078, suit);
+    mesh(g, new THREE.SphereGeometry(0.085, 10, 7), accent, knee[0], knee[1], knee[2]);
+    limb(g, knee, ankle, 0.066, suit);
+    band(g, knee, ankle, 0.75, 0.072, 0.05, suitD);
+    mesh(g, box(0.13, 0.10, 0.17), boot, sx * 0.125, 0.055, 0.34);
+    mesh(g, box(0.134, 0.035, 0.05), accent, sx * 0.125, 0.075, 0.40);
+    mesh(g, box(0.134, 0.02, 0.17), trimL, sx * 0.125, 0.11, 0.34);
   }
+
+  // ---- torso joint at the hips
   const torso = joint(g, 'torso', 0, 0.14, -0.02);
-  mesh(torso, new THREE.BoxGeometry(0.40, 0.34, 0.24), suit, 0, 0.22, 0.04);
-  mesh(torso, new THREE.BoxGeometry(0.42, 0.012, 0.26), suitD, 0, 0.226, 0.04);
-  mesh(torso, new THREE.BoxGeometry(0.26, 0.22, 0.03), accent, 0, 0.21, 0.165);
-  mesh(torso, new THREE.BoxGeometry(0.42, 0.10, 0.04), accent, 0, 0.14, -0.08);
-  for (const sx of [-1, 1]) {
-    mesh(torso, new THREE.BoxGeometry(0.04, 0.34, 0.04), accent, sx * 0.20, 0.22, 0.14);
-    mesh(torso, new THREE.BoxGeometry(0.04, 0.34, 0.04), accent, sx * 0.20, 0.22, -0.06);
-    mesh(torso, new THREE.SphereGeometry(0.075, 12, 8), accent, sx * 0.21, 0.36, 0.04);
-  }
-  const collar = mesh(torso, new THREE.TorusGeometry(0.10, 0.035, 8, 16), accent, 0, 0.425, 0.04, PI / 2);
-  mesh(torso, new THREE.CylinderGeometry(0.09, 0.09, 0.06, 14), suitD, 0, 0.43, 0.04);
-  // head
+  mesh(torso, box(0.44, 0.36, 0.26), suit, 0, 0.22, 0.04);
+  // shoulder yoke in the racer's colour: the top of the body, read from above and behind
+  mesh(torso, box(0.46, 0.11, 0.28), accent, 0, 0.365, 0.04);
+  mesh(torso, box(0.46, 0.012, 0.28), suitD, 0, 0.421, 0.04);
+  // chest plate, zip strip, side piping, back band
+  mesh(torso, box(0.30, 0.22, 0.03), accent, 0, 0.20, 0.175);
+  mesh(torso, box(0.035, 0.30, 0.04), trim, 0, 0.21, 0.18);
+  for (const sx of [-1, 1]) mesh(torso, box(0.03, 0.34, 0.27), suitD, sx * 0.225, 0.21, 0.04);
+  mesh(torso, box(0.44, 0.10, 0.03), accent, 0, 0.16, -0.10);
+  mesh(torso, box(0.20, 0.05, 0.03), suitD, 0, 0.27, -0.10);
+  // shoulder pads
+  for (const sx of [-1, 1]) mesh(torso, new THREE.SphereGeometry(0.085, 12, 8), accent, sx * 0.225, 0.38, 0.04);
+  // collar ring and neck
+  mesh(torso, new THREE.TorusGeometry(0.105, 0.035, 8, 14), accent, 0, 0.44, 0.04, PI / 2);
+  mesh(torso, new THREE.CylinderGeometry(0.085, 0.085, 0.09, 12), suitD, 0, 0.45, 0.04);
+
+  // ---- head joint at the helmet base
   const head = joint(torso, 'head', 0, 0.46, 0.04);
-  mesh(head, new THREE.SphereGeometry(0.18, 24, 16), helmet, 0, 0.17, 0);
-  mesh(head, new THREE.SphereGeometry(0.183, 20, 6, PI / 2 - 1.35, 2.7, 1.12, 0.62), visorBack, 0, 0.17, 0);
-  mesh(head, new THREE.SphereGeometry(0.19, 20, 6, PI / 2 - 1.35, 2.7, 1.12, 0.62), visor, 0, 0.17, 0);
-  mesh(head, new THREE.TorusGeometry(0.187, 0.014, 6, 20, 2.7), trim, 0, 0.17 + 0.187 * Math.cos(1.12), 0, PI / 2, 0, PI / 2 - 1.35 + PI);
-  mesh(head, new THREE.SphereGeometry(0.184, 8, 8, PI / 2 - 0.14, 0.28, 0, 1.1), helmetStripe, 0, 0.17, 0);
-  mesh(head, new THREE.SphereGeometry(0.184, 8, 8, 3 * PI / 2 - 0.14, 0.28, 0, 1.6), helmetStripe, 0, 0.17, 0);
-  mesh(head, new THREE.BoxGeometry(0.22, 0.09, 0.12), helmet, 0, 0.07, 0.13);
-  mesh(head, new THREE.BoxGeometry(0.16, 0.04, 0.04), trim, 0, 0.08, 0.19);
-  mesh(head, new THREE.BoxGeometry(0.04, 0.12, 0.16), helmetStripe, 0, 0.395, -0.02, 0.0);
-  mesh(head, new THREE.CylinderGeometry(0.12, 0.13, 0.05, 20), trim, 0, 0.0, 0.0);
-  // arms with the gloves out to the wheel
+  const HR = 0.17, HY = 0.15;
+  mesh(head, new THREE.SphereGeometry(HR, 20, 14), helmet, 0, HY, 0);
+  // visor: a dark band, the mirrored pane over it, a gleam strip near its top, a trim rim above
+  mesh(head, new THREE.SphereGeometry(HR + 0.003, 20, 6, PI / 2 - 1.3, 2.6, 1.08, 0.66), visorBack, 0, HY, 0);
+  mesh(head, new THREE.SphereGeometry(HR + 0.010, 20, 6, PI / 2 - 1.3, 2.6, 1.08, 0.66), visor, 0, HY, 0);
+  mesh(head, new THREE.SphereGeometry(HR + 0.014, 10, 2, PI / 2 - 0.9, 1.8, 1.12, 0.09), gleam, 0, HY, 0);
+  mesh(head, new THREE.TorusGeometry(HR + 0.006, 0.016, 6, 16, 2.6), trim, 0, HY + (HR + 0.006) * Math.cos(1.08), 0, PI / 2, 0, PI / 2 - 1.3 + PI);
+  for (const sx of [-1, 1]) mesh(head, new THREE.CylinderGeometry(0.035, 0.035, 0.02, 10), trimL, sx * (HR + 0.004), HY + 0.02, 0.01, 0, 0, PI / 2);
+  // chin guard and its vent
+  mesh(head, box(0.24, 0.10, 0.15), helmet, 0, 0.055, 0.115);
+  mesh(head, box(0.16, 0.035, 0.03), trim, 0, 0.055, 0.19);
+  // livery stripe over the crown, front and back, and the fin
+  mesh(head, new THREE.SphereGeometry(HR + 0.004, 8, 8, PI / 2 - 0.14, 0.28, 0, 1.06), helmetStripe, 0, HY, 0);
+  mesh(head, new THREE.SphereGeometry(HR + 0.004, 8, 8, 3 * PI / 2 - 0.14, 0.28, 0, 1.6), helmetStripe, 0, HY, 0);
+  mesh(head, box(0.04, 0.11, 0.20), helmetStripe, 0, HY + HR + 0.02, -0.03);
+  // rear lip and the neck ring
+  mesh(head, box(0.20, 0.03, 0.05), trim, 0, 0.10, -0.155);
+  mesh(head, new THREE.CylinderGeometry(0.12, 0.13, 0.05, 16), trim, 0, 0.0, 0.0);
+
+  // ---- arms: shoulders wide, elbows out past the torso, forearms in to the wheel
+  g.userData.sockets = {};
+  g.userData.joints = { torso, head };
   for (const sx of [-1, 1]) {
-    const ua = joint(torso, sx < 0 ? 'upperArmL' : 'upperArmR', sx * 0.21, 0.36, 0.04);
-    limb(ua, [0, 0, 0], [sx * 0.03, -0.10, 0.16], 0.06, suit);
-    const fa = joint(ua, sx < 0 ? 'forearmL' : 'forearmR', sx * 0.03, -0.10, 0.16);
-    mesh(fa, new THREE.SphereGeometry(0.065, 12, 8), accent, 0, 0, 0);
-    limb(fa, [0, 0, 0], [-sx * 0.08, 0.02, 0.12], 0.05, suit);
-    mesh(fa, new THREE.CylinderGeometry(0.065, 0.06, 0.05, 12), accent, -sx * 0.065, 0.017, 0.10, PI / 2 - 0.5, 0, -sx * 0.5);
-    mesh(fa, new THREE.SphereGeometry(0.075, 14, 10), glove, -sx * 0.09, 0.03, 0.15);
-    mesh(fa, new THREE.BoxGeometry(0.05, 0.05, 0.05), glove, -sx * 0.13, 0.05, 0.17);
-    const grip = joint(fa, sx < 0 ? 'gripL' : 'gripR', -sx * 0.09, 0.03, 0.15);
-    if (!g.userData.sockets) g.userData.sockets = {};
-    g.userData.sockets[sx < 0 ? 'gripL' : 'gripR'] = grip;
-    g.userData.joints = g.userData.joints || {};
+    const ua = joint(torso, sx < 0 ? 'upperArmL' : 'upperArmR', sx * 0.225, 0.38, 0.04);
+    const elbow = [sx * 0.045, -0.13, 0.15];
+    limb(ua, [0, 0, 0], elbow, 0.062, accent);
+    band(ua, [0, 0, 0], elbow, 0.62, 0.072, 0.05, suitD);
+    const fa = joint(ua, sx < 0 ? 'forearmL' : 'forearmR', elbow[0], elbow[1], elbow[2]);
+    mesh(fa, new THREE.SphereGeometry(0.065, 10, 7), accent, 0, 0, 0);
+    const grip = [-sx * 0.135, 0.0, 0.17];
+    limb(fa, [0, 0, 0], grip, 0.056, suit);
+    band(fa, [0, 0, 0], grip, 0.72, 0.066, 0.05, accent);
+    mesh(fa, new THREE.SphereGeometry(0.08, 12, 9), glove, grip[0], grip[1], grip[2]);
+    mesh(fa, box(0.05, 0.05, 0.06), glove, grip[0] - sx * 0.035, grip[1] + 0.035, grip[2] + 0.035);
+    const gs = joint(fa, sx < 0 ? 'gripL' : 'gripR', grip[0], grip[1], grip[2]);
+    g.userData.sockets[sx < 0 ? 'gripL' : 'gripR'] = gs;
     g.userData.joints[sx < 0 ? 'upperArmL' : 'upperArmR'] = ua;
     g.userData.joints[sx < 0 ? 'forearmL' : 'forearmR'] = fa;
   }
-  g.userData.joints.torso = torso; g.userData.joints.head = head;
-  void collar;
   g.userData.livery = 'fabric:' + suit.color.getHexString();
   g.userData.suitAccent = 'fabric:' + accent.color.getHexString();
   g.userData.helmet = 'metal:' + helmet.color.getHexString();

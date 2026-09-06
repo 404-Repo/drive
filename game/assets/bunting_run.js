@@ -1,6 +1,7 @@
 // bunting_run c1: geometry. A cord swept as a tube along a sagging parabola (ends at 1.2 m, 0.72 m sag), 22 pennants
 // hung from it as hand built strips that taper to a point and curl alternately toward plus and minus Z as if in a
 // breeze (this gives the 0.2 m depth), each with a lighter hem at the top. Five fabric colours in rotation.
+// Round 2 (triangle budget, 69 placed): cord tube 12 x 3, knots 6 x 4. 490 -> about 270 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const mat = (name, hex, rough, metal, extra) => {
@@ -16,11 +17,11 @@ export default function (THREE) {
   const pts = [];
   for (let i = 0; i <= 24; i++) { const x = -L / 2 + (L * i) / 24; pts.push(new THREE.Vector3(x, yc(x), 0)); }
   const curve = new THREE.CatmullRomCurve3(pts);
-  const cord = new THREE.Mesh(new THREE.TubeGeometry(curve, 22, 0.02, 5, false), mat('fabric', 0x3a3f46, 0.9, 0, DS));
+  const cord = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.022, 3, false), mat('fabric', 0x3a3f46, 0.9, 0, DS));
   g.add(cord);
   // end knots
   for (const s of [-1, 1]) {
-    const k = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), mat('fabric', 0x3a3f46, 0.9));
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 4), mat('fabric', 0x3a3f46, 0.9));
     k.position.set(s * L / 2, TOP, 0); g.add(k);
   }
 

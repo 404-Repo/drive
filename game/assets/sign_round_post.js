@@ -3,6 +3,7 @@
 // planks with two visible cleats, the arrow is a Shape with a lighter top edge, the coral
 // disc hangs off a side bracket to +x as in the picture, the post is octagonal with a
 // collar, the base an octagonal stone with a sand tint top. Faces +Z, mounts back.
+// Round 2 (triangle budget, 12 placed): ring tori 6 x 16 and 5 x 16, finial 8 x 5. 1564 -> about 1100 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const C = (hex, dl, ds) => new THREE.Color(hex).offsetHSL(0, ds || 0, dl || 0);
@@ -39,7 +40,7 @@ export default function (THREE) {
   mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.0, 8), dark, 0, 1.29, PZ);
   mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.06, 8), darkHi, 0, 1.5, PZ);
   mesh(new THREE.CylinderGeometry(0.055, 0.04, 0.05, 8), darkHi, 0, 2.31, PZ);
-  mesh(new THREE.SphereGeometry(0.045, 10, 8), darkHi, 0, 2.35, PZ);
+  mesh(new THREE.SphereGeometry(0.045, 8, 5), darkHi, 0, 2.35, PZ);
 
   // backing: teal plank disc made of five horizontal planks clipped to a circle, two cleats
   const DY = 2.2;
@@ -52,8 +53,8 @@ export default function (THREE) {
   for (const by of [DY - 0.2, DY + 0.2]) box(0.08, 0.05, 0.03, dark, 0, by, -0.11);
   // whitewash disc with a rolled red torus rim and a lighter rolled highlight
   disc(0.36, 0.05, 20, white, 0, DY, -0.005);
-  mesh(new THREE.TorusGeometry(0.355, 0.045, 10, 20), red, 0, DY, 0.0);
-  mesh(new THREE.TorusGeometry(0.355, 0.02, 8, 20), redHi, 0, DY, 0.03);
+  mesh(new THREE.TorusGeometry(0.355, 0.045, 6, 16), red, 0, DY, 0.0);
+  mesh(new THREE.TorusGeometry(0.355, 0.02, 5, 16), redHi, 0, DY, 0.03);
   // arrow shape pointing +x with a lighter top edge
   const arrow = new THREE.Shape();
   arrow.moveTo(-0.2, 0.045); arrow.lineTo(0.02, 0.045); arrow.lineTo(0.02, 0.12); arrow.lineTo(0.22, 0); arrow.lineTo(0.02, -0.12); arrow.lineTo(0.02, -0.045); arrow.lineTo(-0.2, -0.045); arrow.closePath();

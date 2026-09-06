@@ -2,6 +2,7 @@
 // (cylinders, 10 segments) with the rear frame OUTSIDE the long rails, a notched
 // stretcher with three notch blocks, and the sling as flat facets along the curve with
 // rolled hems at both rails and a fold over the top rail.
+// Round 2 (triangle budget, 14 placed): frame rods at 6 segments, sling hems at 8. 1694 -> about 1100 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const C = (hex, dl, ds) => new THREE.Color(hex).offsetHSL(0, ds || 0, dl || 0);
@@ -15,7 +16,7 @@ export default function (THREE) {
   const dowel = (a, b, r, mat, ext) => {
     const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]);
     const dir = B.clone().sub(A); const len = dir.length() + 2 * (ext || 0); dir.normalize();
-    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), mat);
+    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), mat);
     o.position.copy(A).add(B).multiplyScalar(0.5);
     o.quaternion.setFromUnitVectors(UP, dir);
     g.add(o); return o;
@@ -43,12 +44,12 @@ export default function (THREE) {
     dowel([s * X, footL[1], footL[2]], [s * X, band[1], band[2]], R, tealFoot);
     dowel([s * X, band[1], band[2]], [s * X, topL[1], topL[2]], R, teal, 0.03);
     // lighter end discs, the painted edge of every dowel end
-    const e1 = mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 10), tealHi, s * X, topL[1] + 0.03, topL[2] - 0.03);
+    const e1 = mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 6), tealHi, s * X, topL[1] + 0.03, topL[2] - 0.03);
     e1.quaternion.setFromUnitVectors(UP, new THREE.Vector3(0, 0.875, -1).normalize());
     const bandR = lerp(footR, pivot, 0.15 / 0.874);
     dowel([s * XO, footR[1], footR[2]], [s * XO, bandR[1], bandR[2]], R, tealFoot);
     dowel([s * XO, bandR[1], bandR[2]], [s * XO, rearTop[1], rearTop[2]], R, teal, 0.03);
-    const e2 = mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 10), tealHi, s * XO, rearTop[1] + 0.02, rearTop[2] + 0.03);
+    const e2 = mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 6), tealHi, s * XO, rearTop[1] + 0.02, rearTop[2] + 0.03);
     e2.quaternion.setFromUnitVectors(UP, new THREE.Vector3(0, 0.425, 0.764).normalize());
     // stretcher side member and its three notch blocks resting on the rear frame
     dowel([s * 0.16, 0.365, 0.5], [s * 0.16, 0.325, -0.22], R, teal);
@@ -58,9 +59,9 @@ export default function (THREE) {
       box(0.05, 0.045, 0.05, tealHi, s * XO, q[1] + 0.04, q[2]);
     }
     // hinge bolts through both frames
-    const p = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 10), peg, s * 0.2275, pivot[1], pivot[2]);
+    const p = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 6), peg, s * 0.2275, pivot[1], pivot[2]);
     p.rotation.z = Math.PI / 2;
-    mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 10), peg, s * 0.295, pivot[1], pivot[2]).rotation.z = Math.PI / 2;
+    mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 6), peg, s * 0.295, pivot[1], pivot[2]).rotation.z = Math.PI / 2;
   }
   dowel([-0.29, topL[1], topL[2]], [0.29, topL[1], topL[2]], R, teal);
   const fc = lerp(footL, topL, 0.1 / 0.875);
@@ -69,8 +70,8 @@ export default function (THREE) {
   dowel([-XO, rc[1], rc[2]], [XO, rc[1], rc[2]], R, teal);
   dowel([-0.28, 0.365, 0.5], [0.28, 0.365, 0.5], R, teal);
   for (const s of [-1, 1]) {
-    mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 10), tealHi, s * 0.30, topL[1], topL[2]).rotation.z = Math.PI / 2;
-    mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 10), tealHi, s * 0.29, 0.365, 0.5).rotation.z = Math.PI / 2;
+    mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 6), tealHi, s * 0.30, topL[1], topL[2]).rotation.z = Math.PI / 2;
+    mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, 0.02, 6), tealHi, s * 0.29, 0.365, 0.5).rotation.z = Math.PI / 2;
   }
 
   // sling as flat facets: each segment a rotated plane, stripes 0.11 wide
@@ -95,8 +96,8 @@ export default function (THREE) {
   // fold over the top rail and rolled hem at the seat rail, striped to match
   for (let k = 0; k < 5; k++) {
     const hm = k % 2 === 0 ? redHem : whiteHem;
-    const h1 = mesh(new THREE.CylinderGeometry(0.042, 0.042, stripeW, 12), hm, -0.2625 + stripeW * (k + 0.5), topL[1], topL[2]); h1.rotation.z = Math.PI / 2;
-    const h2 = mesh(new THREE.CylinderGeometry(0.042, 0.042, stripeW, 12), hm, -0.2625 + stripeW * (k + 0.5), 0.365, 0.5); h2.rotation.z = Math.PI / 2;
+    const h1 = mesh(new THREE.CylinderGeometry(0.042, 0.042, stripeW, 8), hm, -0.2625 + stripeW * (k + 0.5), topL[1], topL[2]); h1.rotation.z = Math.PI / 2;
+    const h2 = mesh(new THREE.CylinderGeometry(0.042, 0.042, stripeW, 8), hm, -0.2625 + stripeW * (k + 0.5), 0.365, 0.5); h2.rotation.z = Math.PI / 2;
   }
   // the fold hanging behind the top rail
   box(0.525, 0.1, 0.015, red, 0, topL[1] - 0.06, topL[2] - 0.045);

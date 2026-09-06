@@ -1,18 +1,23 @@
 /**
  * DRIVE  src/kart/camera.js  (owner: kart)
  *
- * The chase camera. Round 1 brought it in and down: the round 0 camera (6.8 m back, 2.4 m up,
- * fov 60, per docs/TRACK-PLAN.md section 9) put the player kart at about 8 percent of the frame
- * height, and the blind critic's deciding property was "a matte matchbox under a far, high chase
- * camera" against a bar that puts the kart and driver at about a third of the frame. Now:
- *   4.3 m behind the kart along its smoothed heading (4.8 m at vmax), 1.5 m above the ROAD under
- *   the kart (a hop does not lift the camera), looking at a point 6 m ahead of the kart 0.3 m up
- *   (rest pitch about -6.6 degrees, horizon near row 0.40); vertical fov 58 on landscape and 66
- *   on portrait, plus 3 degrees at the speed cap and a further 5 on boost (the kart stays over
- *   0.22 of the frame height at every speed); yaw follows the heading through a critically damped
- *   spring with a 0.18 s time constant and lags up to 12 degrees toward the outside during a
- *   drift; roll is 60% of the road bank; a sphere cast from the kart to the camera pulls it in
- *   when a wall is between; the camera never pitches below the horizon minus 20 degrees.
+ * The chase camera. Round 1 brought it in and down (the round 0 camera, 6.8 m back, 2.4 m up,
+ * fov 60 per docs/TRACK-PLAN.md section 9, put the player kart at about 8 percent of the frame
+ * height). Round 2 brought it in again: the round 2 blind critic measured the kart at 15 to 22
+ * percent of the frame height under the 4.3 m / 1.5 m camera against 35 to 60 percent in every
+ * bar frame, with the driver's helmet above the horizon line. Now, landscape:
+ *   2.8 m behind the kart along its smoothed heading (3.1 m at vmax), 1.05 m above the ROAD under
+ *   the kart (a hop does not lift the camera), looking at a point 6.5 m ahead of the kart 0.55 m
+ *   up (rest pitch about -3.1 degrees, horizon near row 0.45, so the helmet top at 1.33 m sits
+ *   above the horizon); vertical fov 58 plus 3 degrees at the speed cap and a further 4 on boost.
+ *   The kart box (docs/CLAIMS.md kart mask) spans about 0.45 to 0.52 of the frame height at race
+ *   pace and the kart reads at about 0.40 by eye (helmet top to tyre bottom).
+ * Portrait (the phone) keeps more road in view: 3.9 m back (4.2 at vmax), 1.15 m up, fov 68 (at 3.4 m the
+ *   kart filled 70 percent of the phone width and hid the road).
+ *   Yaw follows the heading through a critically damped spring with a 0.18 s time constant and
+ *   lags up to 12 degrees toward the outside during a drift; roll is 60% of the road bank; a
+ *   sphere cast from the kart to the camera pulls it in when a wall is between; the camera never
+ *   pitches below the horizon minus 20 degrees.
  *
  *   const chase = new ChaseCamera({ camera, world, tier });
  *   chase.snapTo(body);           // at the grid and after a respawn
@@ -28,15 +33,27 @@
  * shake on a spin out. Nothing here touches the body.
  */
 import * as THREE from 'three';
-import { KART } from './physics.js?v=r1-20260906113009';
+import { KART } from './physics.js?v=r2-20260906125925';
 
 export const CAMERA = {
-  distance: 4.3, distanceFast: 4.8, height: 1.5, lookAhead: 6.0, lookHeight: 0.3,
-  fovLandscape: 58, fovPortrait: 66, fovSpeed: 3, fovBoost: 5,
+  distance: 2.8, distanceFast: 3.1, height: 1.05, lookAhead: 6.5, lookHeight: 0.55,
+  portraitDistance: 3.9, portraitDistanceFast: 4.2, portraitHeight: 1.15,
+  fovLandscape: 58, fovPortrait: 68, fovSpeed: 3, fovBoost: 4,
   yawTau: 0.18, driftLagDeg: 12, bankRoll: 0.6, pitchFloorDeg: -20,
-  castRadius: 0.4, heightTau: 0.12, fovTau: 0.25, pullFloor: 2.6, pullLift: 0.8,
+  castRadius: 0.4, heightTau: 0.12, fovTau: 0.25, pullFloor: 2.2, pullLift: 0.8,
   cobbleShake: 0.02, cobbleHz: 8,
 };
+
+// Debug knob (never set by the game): ?cam=distance,distanceFast,height,lookAhead,lookHeight,fovLandscape,fovPortrait,portraitDistance,portraitDistanceFast,portraitHeight
+// overrides the framing constants so a probe can A/B the chase framing without an edit. Blank fields keep the default.
+try {
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('cam') : null;
+  if (q) {
+    const keys = ['distance', 'distanceFast', 'height', 'lookAhead', 'lookHeight', 'fovLandscape', 'fovPortrait', 'portraitDistance', 'portraitDistanceFast', 'portraitHeight'];
+    q.split(',').forEach((v, i) => { const n = parseFloat(v); if (Number.isFinite(n) && keys[i]) CAMERA[keys[i]] = n; });
+    console.info('[camera] ?cam override ' + keys.map((k) => k + '=' + CAMERA[k]).join(' '));
+  }
+} catch (e) { /* no location in node */ }
 
 /** The pitch the constants give at rest, degrees (negative is down); telemetry's rest pitch should be this. */
 export const REST_PITCH_DEG = -Math.atan2(CAMERA.height - CAMERA.lookHeight, CAMERA.distance + CAMERA.lookAhead) * 180 / Math.PI;
@@ -91,7 +108,7 @@ export class ChaseCamera {
     this.yaw = body.heading; this.yawVel = 0;
     this.groundY = typeof body.groundY === 'number' ? body.groundY : body.pos.y;
     this.driftLag = 0; this.roll = 0; this.shake = 0;
-    this.distance = CAMERA.distance;
+    this.distance = this.portrait ? CAMERA.portraitDistance : CAMERA.distance;
     this.fov = this.portrait ? CAMERA.fovPortrait : CAMERA.fovLandscape;
     this._snapped = true;
     this._place(body, 0, true);
@@ -128,9 +145,10 @@ export class ChaseCamera {
     const sp = clamp(Math.abs(body.speed) / KART.vmax, 0, 1.4);
     const boosting = body.boost > 0 ? 1 : 0;
     this.boostVis += (boosting - this.boostVis) * Math.min(1, dt / 0.2);
-    const dTarget = lerp(CAMERA.distance, CAMERA.distanceFast, clamp(sp, 0, 1));
+    const portrait = this.portrait;
+    const dTarget = portrait ? lerp(CAMERA.portraitDistance, CAMERA.portraitDistanceFast, clamp(sp, 0, 1)) : lerp(CAMERA.distance, CAMERA.distanceFast, clamp(sp, 0, 1));
     this.distance += (dTarget - this.distance) * Math.min(1, dt / 0.3);
-    const fovBase = this.portrait ? CAMERA.fovPortrait : CAMERA.fovLandscape;
+    const fovBase = portrait ? CAMERA.fovPortrait : CAMERA.fovLandscape;
     const fovTarget = fovBase + CAMERA.fovSpeed * clamp(sp, 0, 1) + CAMERA.fovBoost * this.boostVis;
     this.fov += (fovTarget - this.fov) * Math.min(1, dt / CAMERA.fovTau);
 
@@ -150,9 +168,10 @@ export class ChaseCamera {
     _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const kx = body.pos.x, kz = body.pos.z;
     const baseY = this.groundY;
+    const camH = this.portrait ? CAMERA.portraitHeight : CAMERA.height;
 
     // desired position: behind along the smoothed heading, above the road
-    _pos.set(kx - _fwd.x * this.distance, baseY + CAMERA.height, kz - _fwd.z * this.distance);
+    _pos.set(kx - _fwd.x * this.distance, baseY + camH, kz - _fwd.z * this.distance);
     // look target: ahead of the kart along ITS heading, at 1 m
     const hx = Math.sin(body.heading), hz = Math.cos(body.heading);
     _look.set(kx + hx * CAMERA.lookAhead, baseY + CAMERA.lookHeight, kz + hz * CAMERA.lookAhead);
@@ -164,7 +183,7 @@ export class ChaseCamera {
       let hit = null;
       try { hit = w.sphereCast(_from, _pos, CAMERA.castRadius); } catch (e) { hit = null; }
       if (hit && hit.hit) {
-        // never closer than pullFloor: at 4.3 m the old 1.2 m floor put the camera inside the driver's
+        // never closer than pullFloor: the round 0 floor of 1.2 m put the camera inside the driver's
         // helmet whenever the kart was pinned against a house wall (round 1 gate frame 3); when the
         // wall is nearer than the floor the camera lifts instead, so it looks over the kart's wing
         const full = _from.distanceTo(_pos);

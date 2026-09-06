@@ -5,7 +5,7 @@
  * them through `tier.density`, `tier.castDist`, `tier.cardsFar` and so on rather than re-deciding
  * what a phone can do.
  *
- *   import { TIERS, detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r1-20260906113009';
+ *   import { TIERS, detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r2-20260906125925';
  *   const tierName = detectTier();          // 'high' | 'phone'
  *   const tier = getTier(tierName);         // the TIERS entry, with .name attached
  *
@@ -15,7 +15,7 @@
  * (the level builder reads it); shadowDist is the cascade extent.
  */
 export const TIERS = {
-  high:  { pixelRatio: 1.5, shadowMap: 4096, cascades: 1, shadowDist: 70, castDist: 40, post: true,  density: 1.0, texRes: 1024, anisotropy: 4, cardsFar: 220, propsFar: 260, fog: true },
+  high:  { pixelRatio: 1.5, shadowMap: 4096, cascades: 1, shadowDist: 70, castDist: 32, post: true,  density: 1.0, texRes: 1024, anisotropy: 4, cardsFar: 220, propsFar: 260, fog: true },
   phone: { pixelRatio: 1.0, shadowMap: 1024, cascades: 1, shadowDist: 45, castDist: 30, post: false, density: 0.5, texRes: 512,  anisotropy: 1, cardsFar: 140, propsFar: 180, fog: true },
 };
 for (const k of Object.keys(TIERS)) TIERS[k].name = k;

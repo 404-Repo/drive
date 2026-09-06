@@ -2,6 +2,8 @@
 // rectangle Shape with two slot holes) extruded 0.02 m, so the gaps are real holes; corner
 // posts overlaid in the other colour. Lemons are lathes with a nipple, the net is an extruded
 // lattice Shape folded over the crate lip. Same 4 / 3 / 1 stacking, a 2 degree lean.
+// Round 2 (triangle budget, 8 placed): lemons as 5 point lathes at 6 segments, the 12 mm post top
+// strips dropped (the post tops read from the posts themselves). 5404 -> about 3900 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI, DS = THREE.DoubleSide;
@@ -34,7 +36,6 @@ export default function (THREE) {
     bx(W - 0.04, 0.02, D - 0.04, slats.base, 0, 0, 0, c);
     for (const sz of [-1, 1]) bx(W + 0.01, 0.03, 0.03, slats.edge, 0, 0.37, sz * (D / 2 - 0.015), c);
     for (const sz of [-1, 1]) bx(W, 0.012, 0.03, slats.top, 0, 0.4, sz * (D / 2 - 0.015), c);
-    for (const sx of [-1, 1]) bx(0.012, 0.012, D, posts.top, sx * (W / 2 - 0.006), 0.4, 0, c);
     return c;
   };
   crate(-0.3, 0, 0.25, teal, wood, true); crate(0.3, 0, 0.25, wood, teal, true);
@@ -42,9 +43,9 @@ export default function (THREE) {
   crate(-0.3, 0.4, -0.22, teal, wood); crate(0.3, 0.4, -0.22, wood, teal); crate(-0.3, 0.4, 0.25, wood, teal);
   const top = crate(0.02, 0.8, -0.24, teal, wood);
   // lemons: lathe profile with a nipple, on a false floor, plus spilled ones
-  const lemonProf = [[0, 0], [0.028, 0.004], [0.045, 0.025], [0.048, 0.05], [0.04, 0.078], [0.02, 0.095], [0.008, 0.1], [0, 0.104]];
+  const lemonProf = [[0, 0], [0.04, 0.012], [0.048, 0.05], [0.036, 0.085], [0.012, 0.1], [0, 0.104]];
   bx(W - 0.1, 0.25, D - 0.1, wood.base, 0, 0.02, 0, top);
-  const lem = (x, y, z, mt, parent, rx, rz) => { const o = add(lathe(lemonProf, 8), mt, x, y, z, parent); o.rotation.x = rx || 0; o.rotation.z = rz || 0; return o; };
+  const lem = (x, y, z, mt, parent, rx, rz) => { const o = add(lathe(lemonProf, 6), mt, x, y, z, parent); o.rotation.x = rx || 0; o.rotation.z = rz || 0; return o; };
   for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) lem(-0.195 + 0.13 * i, 0.27, -0.13 + 0.13 * j, (i + j) % 2 ? lemon : lemon2, top, 0.3 * ((i + j) % 3 - 1), 0.25 * (i % 2 ? 1 : -1));
   for (const [lx, lz] of [[-0.13, -0.06], [0.0, -0.06], [0.13, -0.06], [-0.06, 0.07]]) lem(lx, 0.35, lz, lemon, top, 0.5, -0.4);
   lem(-0.03, 0.43, 0.0, lemon2, top, 1.2, 0.2);

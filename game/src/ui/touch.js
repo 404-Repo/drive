@@ -25,7 +25,7 @@
  * Signature (docs/ARCHITECTURE.md): new TouchControls(container); enabled; steer -1..1 (ramped
  * over 0.12 s like the keyboard); hop; item (one shot); brake; consume().
  */
-import { ensureFonts, CORAL, INK, PAPER, PIX, WIDE, h, isTouchDevice } from './screens.js?v=r1-20260906113009';
+import { ensureFonts, CORAL, INK, PAPER, PIX, WIDE, h, isTouchDevice } from './screens.js?v=r2-20260906125925';
 
 const STEER_RAMP_S = 0.12;
 

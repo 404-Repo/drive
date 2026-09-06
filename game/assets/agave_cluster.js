@@ -3,6 +3,8 @@
 // at the base, bent outward along its length after construction. The painted edge is a thinner
 // lighter leafOuter extrusion of the full outline with a narrower darker slab on top of it, so the
 // light rim shows all round. Dark centre cone, sand fillet at the base.
+// Round 2 (triangle budget, 18 placed): leaves as 7 point outlines, the inner leaf a flat shape on the
+// outer extrude (the 6 cm inner slab was inside the outer edge). 1512 -> about 700 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const M = (name, color, roughness, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color, roughness, metalness: 0 }, extra || {})); m.name = name; return m; };
@@ -16,8 +18,8 @@ export default function (THREE) {
 
   const leafShape = (w, L) => {
     const s = new THREE.Shape();
-    s.moveTo(-w / 2, 0); s.lineTo(-w * 0.53, L * 0.15); s.lineTo(-w * 0.46, L * 0.4); s.lineTo(-w * 0.3, L * 0.7); s.lineTo(-w * 0.12, L * 0.9); s.lineTo(0, L);
-    s.lineTo(w * 0.12, L * 0.9); s.lineTo(w * 0.3, L * 0.7); s.lineTo(w * 0.46, L * 0.4); s.lineTo(w * 0.53, L * 0.15); s.lineTo(w / 2, 0); s.closePath();
+    s.moveTo(-w / 2, 0); s.lineTo(-w * 0.5, L * 0.3); s.lineTo(-w * 0.3, L * 0.7); s.lineTo(0, L);
+    s.lineTo(w * 0.3, L * 0.7); s.lineTo(w * 0.5, L * 0.3); s.lineTo(w / 2, 0); s.closePath();
     return s;
   };
   const bent = (geo, L, bend) => {
@@ -28,7 +30,7 @@ export default function (THREE) {
   };
   const leafPair = (w, L, bend) => ({
     leafOuter: bent(new THREE.ExtrudeGeometry(leafShape(w, L), { depth: 0.035, bevelEnabled: false }), L, bend),
-    inner: bent(new THREE.ExtrudeGeometry(leafShape(w * 0.78, L * 0.96), { depth: 0.06, bevelEnabled: false }), L, bend),
+    inner: bent(new THREE.ShapeGeometry(leafShape(w * 0.78, L * 0.96)), L, bend),
   });
   const rings = [
     { n: 7, L: 1.0, w: 0.25, pitch: 1.25, r: 0.1, y: 0.05, bend: 0.25, off: 0.0 },

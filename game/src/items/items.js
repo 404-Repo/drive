@@ -18,21 +18,28 @@
  * Events consumed: 'useItem' { id, backwards } from kart/player.js.
  *
  * Draw budget: one draw per material bucket per pooled asset (about 3 for the box, 1 to 2 each for buoy,
- * cannonball, crate and shield) plus one Points and one LineSegments for the effects: about 12 at peak,
- * against the 40 the lead allowed. Nothing here is baked and nothing uses .clone(true) of a merged asset.
+ * cannonball and crate), four for every shield up at once (shield.js) plus one Points and one LineSegments
+ * for the effects: about 14 at peak, against the 40 the lead allowed. Nothing here is baked and nothing
+ * uses .clone(true) of a merged asset.
+ *
+ * The shield visual is drawn HERE (shield.js: a fresnel shell the kart reads through, the asset's foam
+ * bubbles as glassy rims, a sparkle ring at the base), not by kartview.setShield, which parents the raw
+ * foam_shield asset (a DoubleSide 0.35 shell plus 0.62 bubbles) and hid the kart in the round 1 frames.
+ * `viewShield: true` in the constructor hands the visual back to the view for an A/B.
  */
 import * as THREE from 'three';
-import { preloadAssets } from '../../assetlib.js?v=r1-20260906113009';
-import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r1-20260906113009';
-import { Projectiles } from './projectiles.js?v=r1-20260906113009';
-import { Hazards } from './hazards.js?v=r1-20260906113009';
+import { preloadAssets } from '../../assetlib.js?v=r2-20260906125925';
+import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r2-20260906125925';
+import { Projectiles } from './projectiles.js?v=r2-20260906125925';
+import { Hazards } from './hazards.js?v=r2-20260906125925';
+import { ShieldFX, dotTexture } from './shield.js?v=r2-20260906125925';
 
 export const ITEMS = {
   buoy:       { asset: 'chaser_buoy',  speed: 34, lock: 60, life: 8,  hit: 'spin' },
   cannonball: { asset: 'cannonball',   speed: 30, bounces: 3, life: 6, hit: 'spin' },
   crate:      { asset: 'spill_crate',  drop: 2,  life: 25, max: 6, hit: 'spin' },
   espresso:   { asset: 'espresso_cup', boost: 10, dur: 2.2 },
-  shield:     { asset: 'foam_shield',  dur: 8 },
+  shield:     { asset: 'foam_shield',  dur: 6 },   // round 2: 8 s held the bubble over the player in 5 of 8 critic frames
 };
 export const ITEM_KEYS = ['buoy', 'cannonball', 'crate', 'espresso', 'shield'];
 
@@ -103,7 +110,6 @@ const ROULETTE_TIME = 1.2;
 const ROULETTE_TICK = 0.09;
 const _col = new THREE.Color();
 const _up = new THREE.Vector3(0, 1, 0), _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _c = new THREE.Vector3();
-const _q = new THREE.Quaternion(), _e = new THREE.Euler();
 
 /**
  * Two draws of effects for the whole subsystem: a Points cloud for bursts (shield pop, crate spill, splash,
@@ -119,9 +125,12 @@ class Effects {
     const pg = new THREE.BufferGeometry();
     pg.setAttribute('position', new THREE.BufferAttribute(this.pPos, 3).setUsage(THREE.DynamicDrawUsage));
     pg.setAttribute('color', new THREE.BufferAttribute(this.pCol, 3).setUsage(THREE.DynamicDrawUsage));
+    // round 2 (integrator): the bursts drew as hard edged 40 px squares round the kart (gate frame p0.29, no map on the
+    // PointsMaterial); they take the shield's soft radial dot now
+    const burstMap = dotTexture();
     this.points = new THREE.Points(pg, new THREE.PointsMaterial({
       size: 0.16, sizeAttenuation: true, vertexColors: true, transparent: true, opacity: 0.9,
-      depthWrite: false, blending: THREE.AdditiveBlending,
+      depthWrite: false, blending: THREE.AdditiveBlending, map: burstMap, alphaMap: burstMap,
     }));
     this.points.name = 'items:bursts';
     this.points.frustumCulled = false;
@@ -236,9 +245,11 @@ export class ItemSystem {
    * @param rng        () => 0..1 for the roulette, Math.random by default
    * @param playerId   the human's body id (main.js puts the player first in `bodies`, so bodies[0] by default);
    *                   the AI leave the last standing box of a row when an empty handed racer is close behind
+   * @param viewShield false (default): items draws the shield (shield.js); true: kartview.setShield draws the
+   *                   raw asset; 'auto': the view when it has setShield, else items
    */
   constructor({ scene, world = null, spline = null, bodies = [], views = new Map(), events = null, tier = null,
-                anchors = null, pads = null, positionOf = null, rng = Math.random, viewShield = 'auto', playerId = undefined }) {
+                anchors = null, pads = null, positionOf = null, rng = Math.random, viewShield = false, playerId = undefined }) {
     this.scene = scene;
     this.world = world;
     this.spline = spline;
@@ -289,8 +300,9 @@ export class ItemSystem {
     this.pools.chaser_buoy = new InstancePool(protos.chaser_buoy, 8, { name: 'chaser_buoy' });
     this.pools.cannonball = new InstancePool(protos.cannonball, 8, { name: 'cannonball' });
     this.pools.spill_crate = new InstancePool(protos.spill_crate, ITEMS.crate.max, { name: 'spill_crate' });
-    this.pools.foam_shield = new InstancePool(protos.foam_shield, n, { name: 'foam_shield', castShadow: false });
     for (const p of Object.values(this.pools)) if (this.scene) this.scene.add(p.group);
+    // the shield shell, bubbles, ring and sparks: shield.js adds its own group to the scene
+    this.shieldFX = new ShieldFX(this.scene, { proto: protos.foam_shield, capacity: n });
 
     this.boxes = new Boxes({
       scene: this.scene, anchors, bodies: this.bodies, events: this.events, pool: this.pools.item_box, spline: this.spline,
@@ -313,13 +325,13 @@ export class ItemSystem {
 
   /** Draw calls this subsystem adds to a frame at most (every pool live, effects on). */
   get draws() {
-    let d = this.effects.draws;
+    let d = this.effects.draws + (this.shieldFX ? this.shieldFX.draws : 0);
     for (const p of Object.values(this.pools)) d += p.draws;
     return d;
   }
   /** Draw calls this frame (idle pools and idle effects are invisible). */
   get drawsNow() {
-    let d = this.effects.drawsNow;
+    let d = this.effects.drawsNow + (this.shieldFX ? this.shieldFX.drawsNow : 0);
     for (const p of Object.values(this.pools)) d += p.drawsNow;
     return d;
   }
@@ -475,8 +487,9 @@ export class ItemSystem {
     const view = this.viewOf(id);
     const useView = this.viewShield === true || (this.viewShield === 'auto' && view && typeof view.setShield === 'function');
     let slot = had ? had.slot : -1;
-    if (!useView && slot < 0) slot = this.pools.foam_shield.acquire();
+    if (!useView && slot < 0 && this.shieldFX) slot = this.shieldFX.acquire(ITEMS.shield.dur);
     this.shields.set(id, { t: ITEMS.shield.dur, slot, index, view: !!useView });
+    if (slot >= 0) this.shieldFX.place(slot, body.pos.x, body.pos.y, body.pos.z, body.heading, ITEMS.shield.dur);
     body.shielded = true;
     if (useView) { try { view.setShield(true); } catch { /* optional */ } }
     if (!had) this.effects.burst(body.pos, 0xbfe8f0, 12, 2.5, 0.4);
@@ -490,7 +503,7 @@ export class ItemSystem {
     const body = this.bodyOf(id);
     if (body) body.shielded = false;
     if (s.view) { const v = this.viewOf(id); if (v && typeof v.setShield === 'function') { try { v.setShield(false); } catch { /* optional */ } } }
-    if (s.slot >= 0) this.pools.foam_shield.release(s.slot);
+    if (s.slot >= 0 && this.shieldFX) this.shieldFX.release(s.slot);
     if (!popped) this.emit('shieldEnd', { id });
   }
 
@@ -554,12 +567,9 @@ export class ItemSystem {
       s.t -= dt;
       const body = this.bodyOf(id);
       if (s.t <= 0 || !body) { this.shieldOff(id); continue; }
-      if (s.slot >= 0) {
-        const h = this.pools.foam_shield.size.y || 2.4;
-        _q.setFromEuler(_e.set(0, s.t * 0.9, Math.sin(s.t * 2.1) * 0.08));
-        this.pools.foam_shield.place(s.slot, body.pos.x, body.pos.y + 0.5 - h / 2, body.pos.z, 0, 1, _q);
-      }
+      if (s.slot >= 0 && this.shieldFX) this.shieldFX.place(s.slot, body.pos.x, body.pos.y, body.pos.z, body.heading, s.t);
     }
+    if (this.shieldFX) this.shieldFX.update(dt);
     // espresso speed lines
     for (const [id, e] of this.espresso) {
       e.t -= dt; e.age += dt;

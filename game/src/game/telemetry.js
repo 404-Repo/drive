@@ -16,7 +16,8 @@
  * rule, kartBox for the claims kart mask ({ x, y, w, h } px and { nx, ny, nw, nh } fractions),
  * state (the race state), missingAssets, stamp and round for the debugger.
  */
-export const REST_PITCH_DEG = -Math.atan2(2.4 - 1.0, 6.8 + 5.0) * 180 / Math.PI;   // the chase camera at rest: about -6.8 degrees
+import { REST_PITCH_DEG } from '../kart/camera.js?v=r2-20260906125925';   // the chase camera's real rest pitch (round 2: -3.1; round 0 hard coded -6.8 here)
+export { REST_PITCH_DEG };
 
 class FpsMeter {
   constructor(window = 0.5) { this.window = window; this.frames = 0; this.elapsed = 0; this.fps = 0; this.worst = 0; }

@@ -3,6 +3,8 @@
 // circumference (every other segment stands 7 mm proud, flat shaded so the blocks read at speed),
 // rounded shoulders, a dished dark metal hub with a rim lip, five box spokes, five hex lug nuts
 // and a raised livery centre cap. Axle along X under userData.joints.spin; outboard face is +X.
+// Round 2: tread blocks 11 mm proud with a deeper groove so the tread reads from the chase camera,
+// and the rubber at roughness 0.6 so the crown carries a soft sun sheen instead of a matte black disc.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI;
@@ -16,7 +18,7 @@ export default function (THREE) {
   };
   const lathe = (pts, seg) => new THREE.LatheGeometry(pts.map((p) => new THREE.Vector2(p[0], p[1])), seg || SEG);
   const DS = { side: THREE.DoubleSide };
-  const rubber = mat(null, 0x232528, 0.85, 0, DS);
+  const rubber = mat(null, 0x232528, 0.6, 0, DS);
   const tread = rubber;   // one rubber bucket per wheel (integrator, round 1: the tread blocks read by their flat shaded facets, and the second dark material cost 3 draws per kart)
   const dark = mat('metal', 0x3a3f46, 0.45, 0.25, DS);
   const darkL = mat('metal', 0x4c525c, 0.45, 0.25, DS);
@@ -74,7 +76,7 @@ export default function (THREE) {
   mesh(spin, revolve(shoulderR, (i) => shoulderR[i][1], false), rubber);
   // crown (flat shaded, gently domed): raised blocks on every other segment with vertical walls
   const crown = [[-0.072, 0.221], [0, 0.223], [0.072, 0.221]];
-  const block = (j) => (j % 2 === 0 ? 0.007 : -0.004);
+  const block = (j) => (j % 2 === 0 ? 0.011 : -0.006);
   mesh(spin, revolve(crown, (i, j) => crown[i][1] + block(j), true), tread);
 
   // hub: a dish with a rim lip on the outboard (+X) face, a flat back plate inboard

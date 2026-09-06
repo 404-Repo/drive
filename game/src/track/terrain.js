@@ -20,7 +20,7 @@
  * aPaint (0 grass, 1 sand, 2 cobble, 3 rock, 4 asphalt; asphalt also weights the cobble channel).
  */
 import * as THREE from 'three';
-import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r1-20260906113009';
+import { sideProfile, noise2, smoothstep, yAt, ROAD } from './road.js?v=r2-20260906125925';
 
 export const TERRAIN_SPEC = {
   bounds: { minX: -210, maxX: 200, minZ: -190, maxZ: 180 },
@@ -45,6 +45,11 @@ export const TERRAIN_SPEC = {
   ],
   extraPads: [],   // the level may pass house pads here: { x0, x1, z0, z1, y, surface }
   flatten: { extra: 4.0, blend: 6.0, beachExtra: 2.1, beachBlend: 5.0, beachWp: [53, 58], underRoad: -0.03, underPavement: -0.02 },
+  // the clock tower rise (F): its east side is a flat grass verge at pavement level out to the retaining wall line
+  // (TRACK-PLAN 7.6: retaining_wall_terrace x 18 along x = 80, z -50 to 58, face west), the hill held back BEHIND
+  // the wall over `behind` metres. Round 2 fix 102: the 6 m blend put a 30 to 49 degree bank between the pavement
+  // and the wall, the wall's base 1.6 to 4 m up it, and a kart that left the road climbed the bank onto the wall face.
+  riseVerge: { wpA: 31, wpB: 40, xWall: 80.4, behind: 5.0, z0: -50, z1: 58, zFeather: 4 },
   terraces: { x0: -110, x1: 40, z0: -150, z1: -30, step: 3, edgeMetres: 1.0 },
   paint: { grass: 0x9aa64a, sand: 0xe6cf9c, cobble: 0xa39f99, rock: 0xcdb897, rockShade: 0x8d7b63, asphalt: 0x65686e },   // cobble and asphalt match road.js PALETTE (round 1: warm grey paving)
   rockSlopeDeg: 40,
@@ -162,7 +167,14 @@ export function buildTerrain(THREE_, spline, spec = TERRAIN_SPEC) {
       else if (al <= h + ROAD.KERB_W) yr = yEdge;                                            // under the kerb substrate
       else if (prof.kind === 'pavement') yr = yEdge + ROAD.PAVE_H + F.underPavement;         // the pavement band
       else yr = yEdge;
-      const w = al <= h + extra ? 1 : 1 - smoothstep(0, blend, al - h - extra);
+      let w = al <= h + extra ? 1 : 1 - smoothstep(0, blend, al - h - extra);
+      // the rise verge: on the east of F the flatten reaches the retaining wall line, whatever the lateral
+      const V = S.riseVerge;
+      if (V && l < 0 && n.s >= wpS[V.wpA] && n.s <= wpS[V.wpB]) {   // heading south, east is the LEFT of travel (l < 0)
+        const zw = smoothstep(V.z0 - V.zFeather, V.z0, z) * (1 - smoothstep(V.z1, V.z1 + V.zFeather, z));
+        const xw = 1 - smoothstep(V.xWall, V.xWall + V.behind, x);
+        w = Math.max(w, zw * xw);
+      }
       if (w > 0) y = lerp(y, yr, w);
       out.flattenW = w;
     } else out.flattenW = 0;

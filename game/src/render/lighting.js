@@ -37,12 +37,12 @@
  *   rig.setFillOccluders([{ x, y, z, yaw, hw, hh, hd, strength }]);   optional, see FILL OCCLUDERS
  */
 import { CSM } from 'three/addons/csm/CSM.js';
-import { getTier } from './quality.js?v=r1-20260906113009';
+import { getTier } from './quality.js?v=r2-20260906125925';
 
 /** Sun placement, TRACK-PLAN section 1 and 9. */
 export const SUN_AZIMUTH_DEG = 250;
 export const SUN_ELEVATION_DEG = 14;
-export const SUN_COLOR = 0xffc9a0;
+export const SUN_COLOR = 0xffe2c0;     // r1 was 0xffc9a0: linear G/R 0.58 capped lit whitewash at luma 226 whatever the intensity (see the round 2 solve)
 /**
  * Solved in work/render/test.html against a whitewash 0xf1e6d2 wall facing the sun and a cobble
  * 0x9a8f80 ground plane half in shadow (work/render/NOTES.md holds the probe numbers): lit whitewash
@@ -68,18 +68,41 @@ export const SUN_COLOR = 0xffc9a0;
  * ground term a warm neutral so a wall in shade takes a little of the lit cobble beside it and reads
  * cooler than its lit face without going the same blue as the road.
  */
-export const SUN_INTENSITY = 3.2;      // r0 was 4.2: the sun drops so sunlit whitewash stays about 205 (below 235) with the fill under it
+/**
+ * ROUND 2 RE-SOLVE (fix2_render, the critic's deciding property: "nothing in the frame ever gets bright or
+ * vivid: p98 luma 203 to 231 against the bar's 225 to 255, pixels above 245 luma 0.1 percent against 1.1;
+ * the sun never lands on anything"). Measured on eight stills at the critic's lap fractions (work/fix2_render/
+ * sweep.mjs, HUD hidden, work/fix2_render/measure.py on the body rows 0.14 to 0.84):
+ *
+ *   sun   colour  exp   hemi  env  wrap  skygain  p98 med  frames p98>=235  frames >245 over 0.5pct
+ *   3.2   ffc9a0  0.96  2.0   .35  1     1.05     208      0 of 8           0 of 8      (round 1)
+ *   6.0   ffd9b8  0.96  2.0   .35  1     1.05     220      2 of 8           2 of 8
+ *   7.5   ffdcc0  0.96  2.0   .35  1     1.05     227      3 of 8           2 of 8
+ *   10    ffe4c4  1.0   2.2   .40  1     1.05     236      4 of 8           2 of 8
+ *   12    ffe4c4  1.0   2.2   .40  1     1.05     241      5 of 8           4 of 8
+ *   11    ffe4c4  1.0   2.2   .40  0.7   1.2      241      6 of 8           4 of 8
+ *   12.5  ffe4c4  1.0   2.0   .40  0.65  1.25     241      7 of 8           6 of 8      (this solve)
+ *
+ * Why the sun alone stalled at 5 of 8: three frames look AWAY from the 14 degree sun (the lower street and
+ * the hillside heading east), where every visible face is a top or a side at 24 to 33 percent of the key,
+ * and ACES needs about 2.6 linear for 245 sRGB. Three levers, all here: the sun colour (0xffc9a0 is linear
+ * G/R 0.58, so luma, which is 72 percent green, could not follow R past 226; 0xffe2c0 is 0.77), the SUN_WRAP
+ * softening below (tops at 40 percent of the key instead of 24), and the sky gain (sky.js) so the cumulus
+ * tops are sunlit things too. The fill (hemisphere 2.0, PMREM 0.4) stays where round 1 put it: shaded cobble
+ * 85 to 110, the bar's blue grey mid tone, and B minus R about +35.
+ */
+export const SUN_INTENSITY = 12.0;     // r1 was 3.2 (whitewash 205): round 2 solve, lit whitewash 240 to 250 under ACES, see the table above
 export const SKY_COLOR = 0x9fb6dc;      // hemisphere sky term (r0 0x8aa6dc): soft blue, the colour of shade on the road
-export const GROUND_COLOR = 0x746e6a;   // the ground a vertical face or an underside sees (r0 0x5c5e66): warm neutral, brighter, so shaded walls are not black
+export const GROUND_COLOR = 0x5e6678;   // the ground a vertical face or an underside sees (r1 0x746e6a warm neutral): cool grey blue since round 2 so a shaded WALL is cooler than its lit face, not only the road (critic item 7); the bounce term below keeps its base warm
 export const SKY_INTENSITY = 2.0;       // r0 was 0.34: shaded cobble at luma 85 to 95, B minus R about +35
-export const ENV_INTENSITY = 0.35;      // r0 was 0.10: the PMREM of the cumulus panorama (sky/sky_pano_*.webp, round 1) carries cream cloud tops and the horizon glow, so it is less blue than the round 0 sky and can run higher
+export const ENV_INTENSITY = 0.4;       // r0 was 0.10, r1 0.35: the PMREM of the cumulus panorama (sky/sky_pano_*.webp, round 1) carries cream cloud tops and the horizon glow, so it is less blue than the round 0 sky and can run higher
 /** Lit cobble and sand bounce onto vertical faces, linear irradiance. Warm, small: the sun is at 14 degrees so flat ground takes a quarter of the key. */
-export const BOUNCE_COLOR = [0.030, 0.020, 0.011];   // 0.35 of the physical sunlit cobble bounce: most ground beside a wall is in that wall's shadow, and the target shade is cool
+export const BOUNCE_COLOR = [0.045, 0.030, 0.016];   // r1 0.030/0.020/0.011 under a 3.2 sun; the sun is 3.75x stronger now and this is 0.15 of the physical bounce: most ground beside a wall is in that wall's shadow, and the target shade is cool
 export const BOUNCE_UNDER = 0.25;
 export const FOG_COLOR = 0xf0dcc0;      // plain Fog colour for unpatched materials (sRGB): the horizon haze
 export const FOG_NEAR = 60;
 export const FOG_FAR = 520;
-export const EXPOSURE = 0.96;           // lit whitewash 215 sRGB luma (target 200 to 225); 1.0 gave 217 and 0.92 gave 211
+export const EXPOSURE = 1.0;            // r1 0.96; the exposure barely moves the top of the ACES curve (0.92 to 1.0 was 3 luma on lit whitewash), the sun does
 
 /**
  * Atmosphere palette, LINEAR radiance before the ACES curve at EXPOSURE. These are the analytic
@@ -283,6 +306,35 @@ function bounceUniforms(THREE) {
   }
   return _bounceUniforms;
 }
+/**
+ * SUN WRAP (fix2_render, optional, default off unless SUN_WRAP < 1): a stylised softening of the sun's
+ * diffuse term, irradiance = pow(dotNL, SUN_WRAP) instead of dotNL. Under a 14 degree sun every up facing
+ * surface (road, kerb top, bonnet) takes 24 percent of the key and can never read sunlit; with 0.7 it takes
+ * 37 percent, a face 20 degrees off the sun 47 percent, a face square to the sun still 100, and a face turned
+ * away still nothing (the shade side keeps the cool fill only). The CSM shadow is untouched. `?wrap=1` is the
+ * plain Lambert A/B.
+ */
+export const SUN_WRAP = 0.65;
+/** Cap on a material's own envMapIntensity (see setupMaterial): 0.8 x the rig's 0.4 fill is the 0.3 the kart paint was tuned to. */
+export const PAINT_ENV_CAP = 0.8;
+let envCapped = 0;
+const WRAP_PARS_FS = /* glsl */`
+uniform float uSunWrap;`;
+function wrapPatch(shader, THREE, uniforms) {
+  Object.assign(shader.uniforms, uniforms);
+  const chunk = THREE.ShaderChunk.lights_physical_pars_fragment;
+  const line = 'vec3 irradiance = dotNL * directLight.color;';
+  if (!chunk || !chunk.includes(line) || !shader.fragmentShader.includes('#include <lights_physical_pars_fragment>')) return false;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>' + WRAP_PARS_FS)
+    .replace('#include <lights_physical_pars_fragment>', chunk.replace(line, 'vec3 irradiance = pow( dotNL, uSunWrap ) * directLight.color;'));
+  return true;
+}
+let _wrapU = null;
+function wrapUniforms() {
+  if (!_wrapU) _wrapU = { uSunWrap: { value: knob('wrap') !== null ? +knob('wrap') : SUN_WRAP } };
+  return _wrapU;
+}
 function bouncePatch(shader, uniforms) {
   // the CSM hook has already replaced lights_pars_begin and lights_fragment_begin with expanded text, so
   // the hooks here are the neighbours that survive: `common` for the uniforms and `lights_fragment_maps`
@@ -367,7 +419,7 @@ function occPatch(shader, uniforms) {
 /** The default occluder: the rock tunnel, from the level plan and the road axis through it. */
 async function defaultOccluders(THREE) {
   try {
-    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r1-20260906113009'), import('../track/spline.js?v=r1-20260906113009')]);
+    const [pl, sp] = await Promise.all([import('../level/placements.js?v=r2-20260906125925'), import('../track/spline.js?v=r2-20260906125925')]);
     const t = pl.LANDMARKS && pl.LANDMARKS.tunnel, spline = sp.SPLINE;
     if (!t || !spline || typeof spline.nearest !== 'function') return [];
     const n = spline.nearest(t.x, t.z);
@@ -504,8 +556,9 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
     lightMargin: 110,
   });
   csm.fade = true;
+  const sunHex = knob('sunc') ? parseInt(knob('sunc'), 16) : SUN_COLOR;   // A/B: `?sunc=ffd9b8`
   for (const l of csm.lights) {
-    l.color.setHex(SUN_COLOR);
+    l.color.setHex(sunHex);
     l.shadow.normalBias = T.name === 'phone' ? 0.08 : 0.035;
     l.name = 'sun';
   }
@@ -559,7 +612,18 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
     const lit = isLit(m), foggable = isFoggable(m);
     if (!lit && !foggable) return false;
     done.add(m);
+    // The rig owns the fill balance (ARCHITECTURE: the PMREM "at low intensity for the fill"). A material
+    // that carries its own envMapIntensity multiplier above 1 was calibrated against round 0's
+    // environmentIntensity 0.10 (kartview's PaintMaterial: 3.0, "paint reflects more sky than plaster");
+    // against the round 1 and 2 fill (0.35 to 0.40) that is a full strength sky mirror and the red kart's
+    // sunlit side read salmon (work/fix2_render/cmp6.png rows 1 and 2, `?paint=0` A/B). Cap it here so the
+    // product stays what it was tuned for; `?paintenv=3` restores the raw value for the A/B.
+    if (lit && typeof m.envMapIntensity === 'number' && m.envMapIntensity > 1) {
+      const cap = knob('paintenv') !== null ? +knob('paintenv') : PAINT_ENV_CAP;
+      if (m.envMapIntensity > cap) { m.envMapIntensity = cap; envCapped++; }
+    }
     const bounce = lit && useBounce ? bounceUniforms(THREE) : null;
+    const wrap = lit && m.isMeshStandardMaterial && wrapUniforms().uSunWrap.value !== 1 ? wrapUniforms() : null;
     const occ = lit && useOcc ? occU : null;
     const vrm = lit && !!m.isVertexPBR;
     const fade = m.userData && m.userData.__cullFade && knob('fade') !== '0' ? fadeU[m.userData.__cullFade] : null;
@@ -576,11 +640,12 @@ export function createLightingRig(THREE, { scene, renderer, camera, tier, envMap
       if (csmHook) csmHook.call(this, shader, r);
       if (vrm) vrmPatch(shader);
       if (bounce) bouncePatch(shader, bounce);
+      if (wrap) wrapPatch(shader, THREE, wrap);
       if (occ) occPatch(shader, occ);
       if (foggable) aerialPatch(shader, atm);
       if (fade) fadePatch(shader, fade);
     };
-    m.customProgramCacheKey = () => (hasPrev ? prevKey : '') + (csmHook ? '|csm' + T.cascades : '') + (vrm ? '|vrmfix' : '') + (bounce ? '|bounce' : '') + (occ ? '|occ' : '') + (foggable ? '|aer' : '') + (fade ? '|fade' : '');
+    m.customProgramCacheKey = () => (hasPrev ? prevKey : '') + (csmHook ? '|csm' + T.cascades : '') + (vrm ? '|vrmfix' : '') + (bounce ? '|bounce' : '') + (wrap ? '|wrap' : '') + (occ ? '|occ' : '') + (foggable ? '|aer' : '') + (fade ? '|fade' : '');
     m.needsUpdate = true;
     return true;
   }

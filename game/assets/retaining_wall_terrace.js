@@ -56,17 +56,15 @@ export default function (THREE) {
       const len = Math.min(lens[seed++ % lens.length], L / 2 - x);
       if (len < 0.18) { x += len; continue; }
       const w = len - 0.035, xc = x + len / 2;
-      box5(Bg, w, ch - 0.04, 0.04, blocks[seed % 4], xc, yl, 0.02);
-      plate(Bg, w - 0.05, 0.028, blockEdge, xc, yl + (ch - 0.04) / 2 - 0.014, 0.045);
+      box5(Bg, w, ch - 0.04, 0.04, blocks[seed % 4], xc, yl, 0.02);   // round 2: the 2.8 cm bleached edge plate per block went (sub pixel past 8 m, 110 triangles a module, 99 modules in view at the hairpin exit)
       x += len;
     }
   }
   // End faces: blocks in the same bond wrapping the ends
   for (const s of [-1, 1]) for (let c = 0; c < courses; c++) {
     const ym = BASE + c * ch + ch / 2, zf = faceZ(ym) - 0.03, dd = zf - BACK;
-    const long = (c + (s > 0 ? 0 : 1)) % 2 === 0, d1 = dd * (long ? 0.58 : 0.36), d2 = dd - d1 - 0.035;
-    box5(g, d1, ch - 0.04, 0.04, blocks[(c + (s > 0 ? 1 : 2)) % 4], s * (L / 2 + 0.02), ym, zf - d1 / 2 - 0.005, 0, s * PI / 2, 0);
-    box5(g, d2, ch - 0.04, 0.04, blocks[(c + 3) % 4], s * (L / 2 + 0.02), ym, BACK + d2 / 2 + 0.005, 0, s * PI / 2, 0);
+    // round 2: one full depth block per course per end (was two per course; the ends only show where a row steps)
+    box5(g, dd - 0.02, ch - 0.04, 0.04, blocks[(c + (s > 0 ? 1 : 2)) % 4], s * (L / 2 + 0.02), ym, (zf + BACK) / 2, 0, s * PI / 2, 0);
   }
   // Back grooves
   for (let c = 1; c <= courses; c++) plate(g, L, 0.03, blockEdge, 0, BASE + c * ch, BACK - 0.005, 0, PI, 0);

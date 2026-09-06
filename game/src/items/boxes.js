@@ -38,8 +38,8 @@
  */
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { ASSET } from '../../assetlib.js?v=r1-20260906113009';
-import { applyMaterials } from '../render/materials.js?v=r1-20260906113009';
+import { ASSET } from '../../assetlib.js?v=r2-20260906125925';
+import { applyMaterials } from '../render/materials.js?v=r2-20260906125925';
 
 const HIDDEN = new THREE.Matrix4().makeScale(1e-6, 1e-6, 1e-6).setPosition(0, -1000, 0);
 const _m = new THREE.Matrix4(), _im = new THREE.Matrix4(), _q = new THREE.Quaternion();

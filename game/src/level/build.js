@@ -22,10 +22,10 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r1-20260906113009';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r1-20260906113009';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r1-20260906113009';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r1-20260906113009';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r2-20260906125925';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r2-20260906125925';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r2-20260906125925';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r2-20260906125925';
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
@@ -228,6 +228,7 @@ export async function buildLevel(THREE_, opts) {
     // the asset's dominant set and rendered as opaque black squares at the lower street and the piazza
     // (rounds/r0 finish run frames 1 and 2)
     if (p.asset === 'kerb_module') paintKerb(T, obj);
+    if (p.paint) paintHull(T, obj, p.paint);
     applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: false });
     counts.set(p.asset, (counts.get(p.asset) || 0) + 1);
     assetNames.add(p.asset);
@@ -421,10 +422,46 @@ function paintKerb(T, obj) {
       // red: hue 4, HSV saturation about 0.75, lightness lifted 12 percent (a saturated red has a low luma by
       // construction, 0.2126 R + 0.7152 G + 0.0722 B; the metric's red needs luma over 50 in the frame, and the
       // measured in frame red was 42 to 50 at the darker value). white: HSV saturation 0.03, lightness 0.93 to 0.97.
-      if (red) m.color.setHSL(4 / 360, 0.80, Math.min(0.62, Math.max(0.52, 0.5 * (max + min) * 1.12)), T.SRGBColorSpace);
+      // round 2: HSL saturation 0.92 and lightness 0.48 to 0.58 (was 0.80 and 0.52 to 0.62). Under the round 2 rig the
+      // red stripes read HSV saturation p50 0.56 to 0.60 in frame (fix_level_3/5/7, 12 to 13k kerb pixels a frame, half of
+      // them under the bar's 0.6): the warm sun and the fill add green and blue to a light red faster than to a deep one
+      if (red) m.color.setHSL(4 / 360, 0.92, Math.min(0.58, Math.max(0.48, 0.5 * (max + min) * 1.04)), T.SRGBColorSpace);
       else m.color.setHSL(40 / 360, 0.14, Math.min(0.97, Math.max(0.93, 0.5 * (max + min) * 1.07)), T.SRGBColorSpace);
       m.name = 'metal';
       m.roughness = 0.45; m.metalness = 0.06;
+      cloned.set(src, m);
+    }
+    if (m !== o.material) o.material = m;
+  });
+}
+
+/**
+ * Painted boats (round 2, critic item 5: "painted boats" among the saturated objects the bar has and the
+ * build lacked). Per instance, before applyMaterials, the same route as paintKerb and the kart liveries:
+ * every material of the boat in the asset's timber teal family (hue 165 to 195, saturation over 0.3: the
+ * hull planks, their dark band, edge strip and top) is cloned and moved to the livery hue and saturation
+ * of `hex` (a style lock livery colour, placements.BOAT_PAINT), keeping the part's own lightness offset
+ * from the base teal so the painted edge and the base band survive. Gunwale, boot top, deck, wheelhouse,
+ * rope and iron keep the asset's colours and names. Materials are cloned because ASSET() shares them
+ * between the instances of a prototype.
+ */
+const _hp = { c: null, t: null, hsl: { h: 0, s: 0, l: 0 }, thsl: { h: 0, s: 0, l: 0 }, base: { h: 0, s: 0, l: 0 } };
+function paintHull(T, obj, hex) {
+  if (!_hp.c) { _hp.c = new T.Color(); _hp.t = new T.Color(); }
+  const c = _hp.c, t = _hp.t, cloned = new Map();
+  t.setHex(hex, T.SRGBColorSpace); t.getHSL(_hp.thsl, T.SRGBColorSpace);
+  c.setHex(0x3f8f8a, T.SRGBColorSpace); c.getHSL(_hp.base, T.SRGBColorSpace);
+  obj.traverse((o) => {
+    if (!o.isMesh || !o.material || Array.isArray(o.material) || !o.material.color) return;
+    let m = cloned.get(o.material);
+    if (!m) {
+      const src = o.material;
+      src.color.getHSL(_hp.hsl, T.SRGBColorSpace);
+      const hue = _hp.hsl.h * 360;
+      const teal = hue > 165 && hue < 195 && _hp.hsl.s > 0.3;
+      if (!teal) { cloned.set(src, src); return; }
+      m = src.clone();
+      m.color.setHSL(_hp.thsl.h, _hp.thsl.s, Math.min(0.85, Math.max(0.12, _hp.thsl.l + (_hp.hsl.l - _hp.base.l))), T.SRGBColorSpace);
       cloned.set(src, m);
     }
     if (m !== o.material) o.material = m;

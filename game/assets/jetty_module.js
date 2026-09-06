@@ -3,6 +3,8 @@
 // the outer bays, cross bearers, planks across with a few visible nail heads, posts with a
 // two turn rope wrap and a chamfered cap, a teal handrail with balusters on the -Z side, three
 // crates at the +X end and the rope coil at the -X end. 8 x 2.5 x 1.5 m, long axis X.
+// Round 2 (triangle budget, 9 placed): rope wraps 4 x 8, coil 6 x 12/10/8, piles at 10 segments, 24 planks
+// (0.31 m) each with its bleached top, nail heads dropped, one slat band per crate. 5808 -> about 3200 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const col = (hex, l = 0, s = 0) => new THREE.Color(hex).offsetHSL(0, s, l);
@@ -29,11 +31,11 @@ export default function (THREE) {
   const PX = [-3.6, 0, 3.6], PZ = [-1.0, 1.0];
   // Tapered piles with a dark base, tide mark, chamfered cap and a two turn rope wrap.
   for (const x of PX) for (const z of PZ) {
-    add(g, new THREE.CylinderGeometry(0.14, 0.17, POST, 12), timbers[1], x, POST / 2, z);
-    add(g, new THREE.CylinderGeometry(0.168, 0.178, 0.34, 12), timberDark, x, 0.17, z);
-    add(g, new THREE.CylinderGeometry(0.168, 0.17, 0.06, 12), tide, x, 0.37, z);
-    add(g, new THREE.CylinderGeometry(0.1, 0.145, 0.05, 12), timberTop, x, POST + 0.02, z);
-    for (let k = 0; k < 2; k++) add(g, new THREE.TorusGeometry(0.165, 0.036, 5, 12), rope, x, DECK + 0.23 + k * 0.07, z, Math.PI / 2, 0, 0);
+    add(g, new THREE.CylinderGeometry(0.14, 0.17, POST, 10), timbers[1], x, POST / 2, z);
+    add(g, new THREE.CylinderGeometry(0.168, 0.178, 0.34, 10), timberDark, x, 0.17, z);
+    add(g, new THREE.CylinderGeometry(0.168, 0.17, 0.06, 10), tide, x, 0.37, z);
+    add(g, new THREE.CylinderGeometry(0.1, 0.145, 0.05, 10), timberTop, x, POST + 0.02, z);
+    for (let k = 0; k < 2; k++) add(g, new THREE.TorusGeometry(0.165, 0.036, 4, 8), rope, x, DECK + 0.23 + k * 0.07, z, Math.PI / 2, 0, 0);
   }
   // Doubled side rails on the outside of the piles, one high and one low, with bolt heads.
   for (const z of [-1.2, 1.2]) {
@@ -48,12 +50,11 @@ export default function (THREE) {
   // Cross bearers under the deck at each pile station and between.
   for (const x of [-3.6, -1.8, 0, 1.8, 3.6]) bx(g, 0.15, 0.09, W - 0.1, timbers[2], x, DECK - 0.045, 0);
   // Planks across the jetty with bleached tops, nail heads at the pile stations every plank.
-  const n = 36, pitch = L / n;
+  const n = 24, pitch = L / n;
   for (let i = 0; i < n; i++) {
     const x = -L / 2 + pitch * (i + 0.5);
     bx(g, pitch - 0.02, T, W - 0.02, timbers[i % 3], x, DECK + T / 2, 0);
     bx(g, pitch - 0.03, 0.012, W - 0.04, timberTop, x, DECK + T + 0.005, 0);
-    if (i % 3 === 1) for (const z of [-1.15, 1.15]) add(g, new THREE.CylinderGeometry(0.015, 0.015, 0.02, 6), iron, x, DECK + T + 0.01, z);
   }
   for (const z of [-1, 1]) bx(g, L, 0.08, 0.04, timberEdge, 0, DECK + T - 0.04, z * (W / 2 + 0.02));
   // Handrail on the -Z side with balusters between the posts.
@@ -63,16 +64,16 @@ export default function (THREE) {
   bx(g, L - 0.4, 0.05, 0.06, teal, 0, DECK + T + 0.12, zr);
   for (let x = -3.15; x <= 3.2; x += 0.9) bx(g, 0.06, railY - DECK - T - 0.04, 0.06, teal, x, DECK + T + (railY - DECK - T) / 2, zr);
   // Rope coil at the -X end.
-  add(g, new THREE.TorusGeometry(0.22, 0.05, 8, 16), rope, -3.3, DECK + T + 0.05, 0.55, Math.PI / 2, 0, 0);
-  add(g, new THREE.TorusGeometry(0.16, 0.05, 8, 14), rope, -3.3, DECK + T + 0.13, 0.55, Math.PI / 2, 0, 0);
-  add(g, new THREE.TorusGeometry(0.1, 0.045, 8, 12), rope, -3.3, DECK + T + 0.2, 0.55, Math.PI / 2, 0, 0);
+  add(g, new THREE.TorusGeometry(0.22, 0.05, 6, 12), rope, -3.3, DECK + T + 0.05, 0.55, Math.PI / 2, 0, 0);
+  add(g, new THREE.TorusGeometry(0.16, 0.05, 6, 10), rope, -3.3, DECK + T + 0.13, 0.55, Math.PI / 2, 0, 0);
+  add(g, new THREE.TorusGeometry(0.1, 0.045, 6, 8), rope, -3.3, DECK + T + 0.2, 0.55, Math.PI / 2, 0, 0);
   // Three crates at the +X end.
   const crate = (x, y, z, s, ry) => {
     const c = new THREE.Group(); c.position.set(x, y, z); c.rotation.y = ry; g.add(c);
     bx(c, s, s * 0.8, s, timbers[0], 0, s * 0.4, 0);
     bx(c, s - 0.02, 0.015, s - 0.02, timberTop, 0, s * 0.8 + 0.007, 0);
     for (const e of [-1, 1]) { bx(c, s + 0.02, 0.05, 0.05, timberEdge, 0, s * 0.8 - 0.025, e * (s / 2 - 0.025)); bx(c, 0.05, 0.05, s + 0.02, timberEdge, e * (s / 2 - 0.025), s * 0.8 - 0.025, 0); }
-    for (const e of [-1, 1]) for (const yy of [0.28, 0.55]) { bx(c, s + 0.01, 0.02, 0.02, timberDark, 0, s * yy, e * (s / 2 + 0.005)); bx(c, 0.02, 0.02, s + 0.01, timberDark, e * (s / 2 + 0.005), s * yy, 0); }
+    for (const e of [-1, 1]) { bx(c, s + 0.01, 0.02, 0.02, timberDark, 0, s * 0.4, e * (s / 2 + 0.005)); bx(c, 0.02, 0.02, s + 0.01, timberDark, e * (s / 2 + 0.005), s * 0.4, 0); }
   };
   crate(3.3, DECK + T, 0.5, 0.5, 0.15);
   crate(3.3, DECK + T + 0.4, 0.5, 0.42, -0.3);

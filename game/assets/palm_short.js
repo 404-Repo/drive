@@ -45,7 +45,7 @@ export default function (THREE) {
   const rad = (y) => R0 - (R0 - R1) * (y / H);
   const drum = (y0, y1, mat, grow) => {
     const s = grow || 1;
-    put(new THREE.CylinderGeometry(rad(y1) * s, rad(y0) * s, y1 - y0, 14), mat, 0, (y0 + y1) / 2, 0);
+    put(new THREE.CylinderGeometry(rad(y1) * s, rad(y0) * s, y1 - y0, 10), mat, 0, (y0 + y1) / 2, 0);
   };
   drum(0, 0.55, baseBand, 1.04);
   let y = 0.55;
@@ -54,15 +54,15 @@ export default function (THREE) {
     const isTeal = i % 2 === 1;
     drum(y, y + h, isTeal ? teal : cream, isTeal ? 1.05 : 1.0);
     // painted lip on each drum top edge
-    put(new THREE.CylinderGeometry(rad(y + h) * (isTeal ? 1.07 : 1.03), rad(y + h) * (isTeal ? 1.07 : 1.03), 0.04, 14), isTeal ? tealLip : creamTop, 0, y + h - 0.02, 0);
+    put(new THREE.CylinderGeometry(rad(y + h) * (isTeal ? 1.07 : 1.03), rad(y + h) * (isTeal ? 1.07 : 1.03), 0.04, 10), isTeal ? tealLip : creamTop, 0, y + h - 0.02, 0);
     y += h;
   });
   // metal rings, rope collar, pot rim
-  put(new THREE.CylinderGeometry(rad(H) * 1.08, rad(H) * 1.08, 0.1, 14), ring, 0, H + 0.05, 0);
-  for (let i = 0; i < 4; i++) put(new THREE.TorusGeometry(rad(H) * 0.98, 0.06, 6, 12), rope, 0, H + 0.17 + i * 0.11, 0, Math.PI / 2, 0, 0);
-  put(new THREE.CylinderGeometry(rad(H) * 1.1, rad(H) * 1.08, 0.1, 14), ring, 0, H + 0.64, 0);
-  put(new THREE.CylinderGeometry(0.46, 0.4, 0.3, 14), pot, 0, H + 0.84, 0);
-  put(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 14), potLip, 0, H + 1.0, 0);
+  put(new THREE.CylinderGeometry(rad(H) * 1.08, rad(H) * 1.08, 0.1, 10), ring, 0, H + 0.05, 0);
+  for (let i = 0; i < 4; i++) put(new THREE.TorusGeometry(rad(H) * 0.98, 0.06, 5, 10), rope, 0, H + 0.17 + i * 0.11, 0, Math.PI / 2, 0, 0);
+  put(new THREE.CylinderGeometry(rad(H) * 1.1, rad(H) * 1.08, 0.1, 10), ring, 0, H + 0.64, 0);
+  put(new THREE.CylinderGeometry(0.46, 0.4, 0.3, 10), pot, 0, H + 0.84, 0);
+  put(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 10), potLip, 0, H + 1.0, 0);
   const TOP = H + 1.03;
 
   const crown = new THREE.Group(); crown.position.set(0, TOP + 0.15, 0); g.add(crown);
@@ -96,7 +96,7 @@ export default function (THREE) {
     leaf.rotation.z = -1.0;
     leaf.scale.z = 0.45;
   }
-  put(new THREE.LatheGeometry([V2(0, 0), V2(1.1, 0), V2(0.95, 0.1), V2(0.62, 0.22), V2(0.3, 0.3), V2(0, 0.32)], 14), sand, 0, 0, 0);
+  put(new THREE.LatheGeometry([V2(0, 0), V2(1.1, 0), V2(0.95, 0.1), V2(0.62, 0.22), V2(0.3, 0.3), V2(0, 0.32)], 10), sand, 0, 0, 0);
 
   const box = new THREE.Box3(), v = new THREE.Vector3(), m = new THREE.Matrix4(), im = new THREE.Matrix4();
   g.updateMatrixWorld(true);

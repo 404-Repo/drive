@@ -2,6 +2,8 @@
 // shaft lathe with entasis, collars and the bracket flare, eight reeding rods, four torus
 // volutes, a tapered four segment lantern lathe in glass with lathe frame rings and slanted
 // corner posts, a four segment pyramid cap lathe, round finial, a lathe bulb lens.
+// Round 2 (triangle budget, 36 placed): shaft at 12 segments, reeding rods square, volutes 5 x 7,
+// finial and lens at 8 segments. 1608 -> about 1000 tris, silhouette unchanged.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI, DS = THREE.DoubleSide;
@@ -25,15 +27,15 @@ export default function (THREE) {
   lathe([[0, 0.25], [0.21 * S2, 0.25], [0.21 * S2, 0.34], [0.17 * S2, 0.34], [0.17 * S2, 0.39], [0, 0.39]], 4, iron.face, true);
   lathe([[0, 0.39], [0.17 * S2, 0.39], [0.17 * S2, 0.4], [0, 0.4]], 4, iron.top, true);
   // shaft with entasis, a foot collar, a mid collar and the bracket flare at 3.6
-  lathe([[0.1, 0.4], [0.1, 0.46], [0.07, 0.5], [0.068, 1.6], [0.062, 2.8], [0.058, 3.05], [0.08, 3.1], [0.08, 3.18], [0.055, 3.22], [0.052, 3.5], [0.16, 3.56], [0.17, 3.62], [0.15, 3.66], [0, 3.66]], 14, iron.face);
-  lathe([[0.1, 0.46], [0.105, 0.47], [0.075, 0.51]], 14, iron.edge);
-  lathe([[0.08, 3.18], [0.085, 3.19], [0.06, 3.22]], 14, iron.edge);
+  lathe([[0.1, 0.4], [0.1, 0.46], [0.07, 0.5], [0.068, 1.6], [0.062, 2.8], [0.058, 3.05], [0.08, 3.1], [0.08, 3.18], [0.055, 3.22], [0.052, 3.5], [0.16, 3.56], [0.17, 3.62], [0.15, 3.66], [0, 3.66]], 12, iron.face);
+  lathe([[0.1, 0.46], [0.105, 0.47], [0.075, 0.51]], 12, iron.edge);
+  lathe([[0.08, 3.18], [0.085, 3.19], [0.06, 3.22]], 12, iron.edge);
   // reeding: eight rods
-  for (let k = 0; k < 8; k++) { const a = k * PI / 4; cyl(0.02, 0.02, 2.4, 6, iron.alt, Math.sin(a) * 0.06, 0.6, Math.cos(a) * 0.06); }
+  for (let k = 0; k < 8; k++) { const a = k * PI / 4; cyl(0.022, 0.022, 2.4, 4, iron.alt, Math.sin(a) * 0.06, 0.6, Math.cos(a) * 0.06); }
   // four volutes out to 0.4 m
   for (let k = 0; k < 4; k++) {
     const arm = new THREE.Group(); arm.rotation.y = k * PI / 2; arm.position.y = 3.58; g.add(arm);
-    add(new THREE.TorusGeometry(0.09, 0.025, 6, 10, 1.5 * PI), iron.edge, 0.29, -0.06, 0, arm).rotation.z = PI / 2;
+    add(new THREE.TorusGeometry(0.09, 0.025, 5, 7, 1.5 * PI), iron.edge, 0.29, -0.06, 0, arm).rotation.z = PI / 2;
     const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.24, 0.05), iron.face); b.position.set(0.12, -0.02, 0); b.rotation.z = PI / 2 + 0.18; arm.add(b);
   }
   // lantern: tapered square glass lathe, frame rings, slanted corner posts, plate, cap, finial
@@ -42,8 +44,8 @@ export default function (THREE) {
   lathe([[0.34, 4.12], [0.38, 4.12], [0.38, 4.19], [0.44, 4.19], [0.45, 4.21], [0.0, 4.21]], 4, iron.face, true);
   for (let k = 0; k < 4; k++) { const a = k * PI / 2 + PI / 4; bar(V(Math.sin(a) * 0.30, 3.68, Math.cos(a) * 0.30), V(Math.sin(a) * 0.36, 4.14, Math.cos(a) * 0.36), 0.024, iron.face); }
   lathe([[0.45, 4.21], [0.46, 4.23], [0, 4.44]], 4, iron.top, true);
-  lathe([[0, 4.44], [0.04, 4.45], [0.05, 4.48], [0.03, 4.5], [0, 4.5]], 10, iron.edge);
-  lathe([[0.03, 3.7], [0.03, 3.82], [0.07, 3.86], [0.08, 3.95], [0.05, 4.03], [0, 4.05]], 10, lens);
+  lathe([[0, 4.44], [0.04, 4.45], [0.05, 4.48], [0.03, 4.5], [0, 4.5]], 8, iron.edge);
+  lathe([[0.03, 3.7], [0.03, 3.82], [0.07, 3.86], [0.08, 3.95], [0.05, 4.03], [0, 4.05]], 8, lens);
 
   const box = new THREE.Box3(), v = new THREE.Vector3(), m = new THREE.Matrix4(), im = new THREE.Matrix4();
   g.updateMatrixWorld(true);

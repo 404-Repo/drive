@@ -56,10 +56,10 @@
  *   applyTerrainMaterial(terrain.tiles, terrain)   after buildTerrain
  */
 import * as THREE from 'three';
-import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r1-20260906113009';
-import { classify, RECIPES } from '../../surfaces.js?v=r1-20260906113009';
-import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r1-20260906113009';
-import { getTier } from './quality.js?v=r1-20260906113009';
+import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r2-20260906125925';
+import { classify, RECIPES } from '../../surfaces.js?v=r2-20260906125925';
+import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r2-20260906125925';
+import { getTier } from './quality.js?v=r2-20260906125925';
 
 /**
  * The sets. `scale` is metres per tile. `normal` is the normal map strength, `albedo` and `rough`
@@ -93,8 +93,8 @@ export const CARDS = {
   palm_frond_c:    { sss: 0.12, tint: 0.30 },
   pine_bough_a:    { sss: 0.08, tint: 0.35 },
   pine_bough_b:    { sss: 0.08, tint: 0.35 },
-  bougainvillea_a: { sss: 0.12, tint: 0.20 },
-  bougainvillea_b: { sss: 0.12, tint: 0.20 },
+  bougainvillea_a: { sss: 0.12, tint: 0.40 },   // round 2 (level request): pulled further toward the palette magenta so the cascades hold saturation over 0.6 under the sun 12 rig
+  bougainvillea_b: { sss: 0.12, tint: 0.40 },
   bunting_a:       { sss: 0.06, tint: 0.00 },
   flag_a:          { sss: 0.06, tint: 0.00 },
   crowd_a:         { sss: 0.00, tint: 0.00 },
@@ -119,11 +119,21 @@ export const CARD_ATLAS = {
   },
 };
 let ATLAS_MAP = null;            // the one card texture; CARD_TEX[card].map is this for every card
+function knob(name) {
+  try { return new URLSearchParams(location.search).get(name); } catch (e) { return null; }
+}
 
 /** Sets that ship a 1024 basecolor and normal for the high tier: the two road surfaces, most of every frame. */
 const HERO_1024 = new Set(['asphalt_worn', 'cobble_warm']);
 /** Assets whose 'stone' is rock, not dressed masonry. */
 const ROCK_ASSETS = /rock_|boulder|sea_stack|cliff|tunnel/;
+/**
+ * Roughness CAPS by asset (fix2_render): the value goes into the part's material before phase 2 bakes it
+ * into aRM, so no new draw bucket is made. The kerb modules ship at the stone band (0.80) and read as
+ * matte grey and pink under the low sun; the critic asked for 0.3 to 0.5 on kerb tops so the white and
+ * red carry a hot spot. `?kerbr=` (the road knob) does not reach these; `?assetr=0` disables the caps.
+ */
+const ROUGH_CAP = { kerb_module: 0.45, lap_arch: 0.5, start_gantry: 0.5 };
 
 // ------------------------------------------------------------------------------------------ textures
 const TEX = {};                  // set -> { map, normal, rough, mean: Color, roughMean, res }
@@ -680,6 +690,7 @@ export function applyMaterials(root, opts = {}) {
       mm.name = src.name;
       mm.map = T.map; mm.normalMap = T.normal; mm.roughnessMap = T.rough || null;
       mm.normalScale = new THREE.Vector2(1, 1);
+      if (ROUGH_CAP[asset] !== undefined && knob('assetr') !== '0' && typeof mm.roughness === 'number') mm.roughness = Math.min(mm.roughness, ROUGH_CAP[asset]);
       if (mm.flatShading) mm.flatShading = false;   // the flat normals go into the geometry instead (flattenGeometry)
       clones.set(ck, mm);
     }
@@ -769,8 +780,10 @@ function ensureVertexAttrs(mesh, colorFor, rough) {
 const ROAD_PARS_VS = /* glsl */`
 attribute vec2 aRM;
 attribute float aSurf;
+attribute float aSurface;
 varying vec2 vRM;
 varying float vSurf;
+varying float vSurfKind;
 varying vec3 vTriPos;
 varying vec3 vTriNrm;`;
 const ROAD_VS = /* glsl */`
@@ -779,19 +792,23 @@ const ROAD_VS = /* glsl */`
   vTriPos = triW.xyz;
   vTriNrm = normalize( mat3( modelMatrix ) * objectNormal );
   vSurf = aSurf;
+  vSurfKind = aSurface;
 }`;
 const ROAD_PARS_FS = /* glsl */`
 varying vec2 vRM;
 varying float vSurf;
+varying float vSurfKind;
 varying vec3 vTriPos;
 varying vec3 vTriNrm;
 uniform sampler2D uAMap, uANrm, uARgh, uBMap, uBNrm, uBRgh;
 uniform vec4 uAK, uBK;
 uniform vec3 uAMean, uBMean;
 uniform vec2 uRoughMeans;
-uniform float uTriNFlip;`;
+uniform float uTriNFlip;
+uniform vec4 uGloss;         // x: paving roughness scale, y: kerb top and paint roughness, z: wet floor roughness, w: wet strength
+uniform vec4 uWetBox;        // harbour wet region: centre x, centre z, half width x, half depth z (metres)`;
 const ROAD_FS = /* glsl */`
-vec3 triN; float triR;
+vec3 triN; float triR; float triMacro = 1.0;
 {
   ${TRI_WEIGHTS}
   float sm = smoothstep( 0.3, 0.7, vSurf );
@@ -819,8 +836,32 @@ vec3 triN; float triR;
     float lm = clamp( dot( m, vec3( 0.3, 0.59, 0.11 ) ) / max( dot( mean, vec3( 0.3, 0.59, 0.11 ) ), 0.02 ), 0.5, 1.8 );
     diffuseColor.rgb *= mix( 1.0, lm, 0.25 );
     triR *= mix( 1.0, 1.0 / lm, 0.2 );
+    triMacro = lm;
   }
 }`;
+// ROAD SPECULAR (fix2_render, critic round 2: "matte materials with no specular anywhere; the sun never lands
+// on anything"). The track writes roughness 0.88 on paving and 0.80 on kerb tops into aRM, which under
+// three's GGX is no highlight at all. The paving is remapped by uGloss.x (0.88 -> about 0.60, the style
+// lock's ground band floor is 0.55) so the low sun lays a broad glare down the road when the camera looks
+// toward it; kerb tops, paint lines, start chequer and lane lines take uGloss.y outright (0.42) so the
+// white and red stripes carry a hot spot; and inside the harbour box (the quay road, section A) the
+// macro variation's low spots go wet: roughness toward uGloss.z with strength uGloss.w. Nothing here
+// touches the track's vertex data; `?gloss=1&kerbr=0.42&wet=0.6` are the A/B knobs.
+const ROAD_ROUGH_FS = /* glsl */`
+float roughnessFactor;
+{
+  float k = vSurfKind;
+  float stripe = ( abs( k - 2.0 ) < 0.5 || abs( k - 5.0 ) < 0.5 || abs( k - 7.0 ) < 0.5 || abs( k - 12.0 ) < 0.5 ) ? 1.0 : 0.0;
+  float r = mix( vRM.x * uGloss.x, min( vRM.x, uGloss.y ), stripe );
+  vec2 wq = abs( vTriPos.xz - uWetBox.xy ) / max( uWetBox.zw, vec2( 0.01 ) );
+  float wet = ( 1.0 - smoothstep( 0.75, 1.0, max( wq.x, wq.y ) ) ) * uGloss.w;
+  float puddle = smoothstep( 1.08, 0.82, triMacro );
+  r = mix( r, min( r, uGloss.z ), wet * ( 0.35 + 0.65 * puddle ) );
+  roughnessFactor = clamp( r * triR, 0.04, 1.0 );
+}`;
+/** The harbour wet box: the quay road, TRACK-PLAN section A (x -134, z -6 to -106) and the quay beside it. */
+export const WET_BOX = { x: -134, z: -58, hw: 24, hd: 64 };
+export const ROAD_GLOSS = { paving: 0.80, stripe: 0.42, wetFloor: 0.38, wet: 0.6 };   // paving 0.88 x 0.80 = 0.70; 0.60 blew the mirror point of the 12 sun into a white blob behind the kart (work/fix2_render/cmp3.png)
 const WORLD_NORMAL_FS = /* glsl */`
 {
   normal = normalize( ( viewMatrix * vec4( triN, 0.0 ) ).xyz );
@@ -844,6 +885,13 @@ export class RoadMaterial extends VertexPBRMaterial {
     shader.uniforms.uAMean = { value: A.mean }; shader.uniforms.uBMean = { value: B.mean };
     shader.uniforms.uRoughMeans = { value: new THREE.Vector2(A.roughMean, B.roughMean) };
     shader.uniforms.uTriNFlip = { value: NORMAL_FLIP };
+    const gk = knob('gloss') !== null ? +knob('gloss') : 1;   // 0: the round 1 matte road (A/B)
+    shader.uniforms.uGloss = { value: new THREE.Vector4(
+      1 - (1 - ROAD_GLOSS.paving) * gk,
+      knob('kerbr') !== null ? +knob('kerbr') : (gk > 0 ? ROAD_GLOSS.stripe : 1),
+      ROAD_GLOSS.wetFloor,
+      knob('wet') !== null ? +knob('wet') : ROAD_GLOSS.wet * gk) };
+    shader.uniforms.uWetBox = { value: new THREE.Vector4(WET_BOX.x, WET_BOX.z, WET_BOX.hw, WET_BOX.hd) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>' + ROAD_PARS_VS)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;')
@@ -851,7 +899,7 @@ export class RoadMaterial extends VertexPBRMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>' + ROAD_PARS_FS)
       .replace('#include <map_fragment>', ROAD_FS)
-      .replace('#include <roughnessmap_fragment>', TRI_ROUGH_FS)
+      .replace('#include <roughnessmap_fragment>', ROAD_ROUGH_FS)
       .replace('#include <metalnessmap_fragment>', TRI_METAL_FS)
       .replace('#include <normal_fragment_maps>', WORLD_NORMAL_FS + '\n#include <normal_fragment_maps>');
   }

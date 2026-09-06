@@ -210,7 +210,13 @@ export function roadside(s, side, offset) {
 function P(asset, x, z, rot, extra = {}) {
   if (!SIZES[asset]) throw new Error(`placements: unknown asset ${asset}`);
   const p = { asset, x: r1(x), z: r1(z), rot: r1(norm360(rot)), y: null, moving: false, tag: extra.tag || asset, block: blockOf(x, z) };
-  for (const k of ['y', 'moving', 'probe', 'lift', 'dy', 'tilt', 'bob', 'alignRoad']) if (extra[k] !== undefined) p[k] = extra[k];
+  for (const k of ['y', 'moving', 'probe', 'lift', 'dy', 'tilt', 'bob', 'alignRoad', 'paint']) if (extra[k] !== undefined) p[k] = extra[k];
+  // Round 2: spectator groups are STATIC. As movers each group was up to 3 draws plus its shadow pass (three card
+  // materials, merged per instance); baked into a block its three cards join the one shared card bucket the block
+  // already draws for bunting, flags and bougainvillea, so 32 groups cost 0 extra draws instead of about 100 at
+  // the town overview (peak draws 968 against the 900 budget in the round 2 gate). The 4 cm bob at 1 Hz they lose
+  // is under a pixel beyond 8 m from the chase camera. The bob parameters are dropped here so nothing animates them.
+  if (asset === 'spectator_group') { p.moving = false; delete p.bob; }
   if (p.y !== null && p.y !== undefined) p.y = r1(p.y);
   return p;
 }
@@ -243,18 +249,37 @@ function houseRow({ from, dir, face, list, stairs = false, tag }) {
   return { placements: out, houses, wall: [[from[0], from[1]], [from[0] + dir[0] * cursor, from[1] + dir[1] * cursor]], rot, face, length: cursor };
 }
 
-/** bougainvillea on every second house of a row, at the wall between windows, facing the road */
-function bougainvilleaOn(row, rng, tag, every = 2, max = Infinity) {
+/**
+ * Bougainvillea on the house fronts of a row, at the wall between windows, facing the road.
+ * Round 2 (critic: "put saturated objects where the bar has them ... bougainvillea"; the share of
+ * strongly saturated pixels was 4 percent of the body against the bar's 19): every house carries a
+ * cascade (round 1 was every second house, capped at 7 a side) and a house 12 m wide carries one at
+ * each end. The card is the most saturated 12 m^2 in the set and it costs 2 planes and a trough.
+ */
+function bougainvilleaOn(row, rng, tag, every = 1, max = Infinity, avoid = []) {
   const out = [];
   row.houses.forEach((h, i) => {
     if (i % every !== 0 || out.length >= max) return;
     const side = rng() < 0.5 ? -1 : 1;
-    const off = side * (h.w / 2 - 2.2);
-    const lx = h.fx + (-row.face[1]) * off, lz = h.fz + (row.face[0]) * off;   // slide along the front line
-    out.push(P('bougainvillea_card', lx + row.face[0] * 0.22, lz + row.face[1] * 0.22, h.rot, { tag }));
+    const want = h.w >= 12 ? 2 : 1;
+    let placed = 0;
+    for (const sd of [side, -side]) {
+      if (placed >= want) break;
+      const off = sd * (h.w / 2 - 2.2);
+      const lx = h.fx + (-row.face[1]) * off, lz = h.fz + (row.face[0]) * off;   // slide along the front line
+      const x = lx + row.face[0] * 0.22, z = lz + row.face[1] * 0.22;
+      if (!clearOf(avoid, x, z, 1.6)) continue;   // a lamp, flag, board or crowd already stands at that wall: the other end, or none
+      out.push(P('bougainvillea_card', x, z, h.rot, { tag })); placed++;
+    }
   });
   return out;
 }
+/** true when no placement in `list` on the same asset class sits within `r` metres of (x, z): keeps pavement furniture apart */
+function clearOf(list, x, z, r = 2.5) {
+  return !list.some((p) => Math.hypot(p.x - x, p.z - z) < r);
+}
+/** hull paint for the painted boats (round 2): the style lock's livery colours, in a fixed order per boat class */
+export const BOAT_PAINT = [0x2f5fc4, 0xd6402f, 0xf2c230, null, 0xf07a2a, 0x3fc7a0, 0xed5851];   // null keeps the asset's timber teal
 
 // ------------------------------------------------------------------------------------ 7.1 grid, gantry, arch
 export const GRID = [
@@ -319,16 +344,19 @@ function genHarbour(rng) {
   // jetties: three runs of three from the quay wall west, piles standing in the water
   for (const z of [-20, -60, -100]) for (let i = 0; i < 3; i++) out.push(P('jetty_module', -150 - 8 * i, z, 0, { tag: 'jetty', y: SEA_LEVEL - 0.2 }));
   // boats and buoys: movers on the water
+  // painted boats (round 2): each hull takes one livery colour from BOAT_PAINT before the material pass (build.js paintHull),
+  // the gunwale, boot top and wheelhouse keep the asset's own colours; the quay side three are the ones the straight sees
   const boats = [[-152, -30, 350], [-154, -70, 10], [-152, -110, 355], [-170, -20, 80], [-172, -85, 100], [-160, -50, 5], [-182, -60, 95]];
-  boats.forEach(([x, z, rot], i) => out.push(P('fishing_boat', x, z, rot, { tag: 'fishing_boat', y: -1.9, moving: true,
+  boats.forEach(([x, z, rot], i) => out.push(P('fishing_boat', x, z, rot, { tag: 'fishing_boat', y: -1.9, moving: true, paint: BOAT_PAINT[i % BOAT_PAINT.length],
     bob: { amp: 0.12, period: 3.1 + 0.4 * rng(), roll: 2.0, pitch: 1.0, phase: rng() * 6.283 } })));
-  for (const [x, z] of [[-147, -8], [-148, -46], [-149, -88]]) out.push(P('rowing_boat', x, z, 90 + (rng() - 0.5) * 30, { tag: 'rowing_boat_afloat', y: -1.7, moving: true,
-    bob: { amp: 0.08, period: 2.4 + 0.4 * rng(), roll: 3.0, pitch: 1.5, phase: rng() * 6.283 } }));
+  [[-147, -8], [-148, -46], [-149, -88]].forEach(([x, z], i) => out.push(P('rowing_boat', x, z, 90 + (rng() - 0.5) * 30, { tag: 'rowing_boat_afloat', y: -1.7, moving: true, paint: [0xd6402f, 0x2f5fc4, 0xf2c230][i],
+    bob: { amp: 0.08, period: 2.4 + 0.4 * rng(), roll: 3.0, pitch: 1.5, phase: rng() * 6.283 } })));
   for (const [x, z] of [[-165, -40], [-178, -30], [-186, -75], [-170, -100], [-180, -110], [-160, 0], [-188, -10], [-175, -60]])
     out.push(P('mooring_buoy', x, z, rng() * 360, { tag: 'mooring_buoy', y: -1.6, moving: true, bob: { amp: 0.15, period: 2.0 + 0.6 * rng(), roll: 6.0, pitch: 4.0, phase: rng() * 6.283 } }));
   // davits, jib toward the water (west)
-  out.push(P('harbour_davit', -140, -70, 270, { tag: 'davit' }));
-  out.push(P('harbour_davit', -140, -110, 270, { tag: 'davit' }));
+  // round 2 (integrator): the quay davits' 3.6 m arm footprint (rot 270 runs along x) stood 1.1 m inside the road edge (x -140.7) and stalled the touch harness square on; base on the coping's outer edge, arm over the water
+  out.push(P('harbour_davit', -142.8, -79, 270, { tag: 'davit' }));
+  out.push(P('harbour_davit', -142.8, -115, 270, { tag: 'davit' }));
   // quay houses: fronts along x = -124.5 facing west, centres at x = -119.5; the arcade at z -44 is set back to x -108
   const quayList = ['house_wide_2storey', 'house_narrow_tall', 'house_balcony_row', 'house_corner_shop', 'house_arcade', 'house_narrow_tall',
     'house_wide_2storey', 'house_balcony_row', 'house_narrow_tall', 'house_corner_shop', 'house_wide_2storey'];
@@ -345,8 +373,43 @@ function genHarbour(rng) {
   for (let i = 0; i < 9; i++) out.push(P('street_lamp', -141.3, -6 - 12 * i, 90, { tag: 'quay_lamp' }));
   // grandstand on its pad facing the road (west), flag poles and tyre walls on the coping (long axis along the quay)
   out.push(P('grandstand_small', -111, -60, 270, { tag: 'quay_grandstand' }));
-  for (const z of [-50, -56, -62, -68, -74, -80]) out.push(P('race_flag_pole', -140, z, 180, { tag: 'quay_flags' }));
-  for (const [x, z] of [[-125, -50], [-125, -70], [-125, -90], [-125, 4]]) out.push(P('spectator_group', x, z, 270, { tag: 'quay_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } }));
+  // Round 2 saturation dressing on the harbour straight (the quay frame had 4 percent strongly saturated pixels):
+  //  - flags the length of the coping every 12 m between the lamps (the plan's six at z -50..-80, at x -140, stood
+  //    1 m inside the road edge like the lamps did; they move to the coping at -141.6 with the lamps), skipping the
+  //    tyre wall stretch at z -37..-19
+  for (let i = 0; i < 9; i++) { const z = -12 - 12 * i; if (z > -40 && z < -17) continue; out.push(P('race_flag_pole', -141.6, z, 180, { tag: 'quay_flags' })); }
+  //  - bunting across the quay road: two 11 m runs per station from opposite anchors (the quay lamp heads at 4.5 m and
+  //    the pavement palms), at lateral -2.75 and +2.75 and two heights so they read as two strings crossing the 14 m
+  //    road; anchors at road y + 5.0 and 5.5 (the run's ends are at 1.2 m over its base). Nothing within 5 m of the gantry.
+  for (let i = 0; i < 17; i++) {
+    const z = -10 - 6 * i;
+    if (Math.abs(z - (-45)) < 6) continue;
+    const n = nearest(-134, z);
+    out.push(P('bunting_run', -134 - 2.75, n.sample.z, 0, { tag: 'bunting_quay', y: n.sample.y + 3.8 }));
+    out.push(P('bunting_run', -134 + 2.75, n.sample.z, 0, { tag: 'bunting_quay', y: n.sample.y + 4.3 }));
+  }
+  //  - a pavement cafe with its two red and white parasols in the 14 m gap in front of the set back arcade (the plan's
+  //    grandstand pad; the grandstand itself stands at z -60), facing the road: "umbrellas along the promenade"
+  out.push(P('cafe_terrace', -117, -44, 270, { tag: 'quay_cafe' }));
+  //  - bougainvillea on every quay house front (the row is explicit here, not a houseRow): one per house, two on the 12 m ones
+  //    (not behind a pavement palm trunk at z = -12 k or a crowd at z -50, -70, -90, 4: 2 m clear of those)
+  const quayBusy = [4, -50, -70, -90, -6.5, -8.6, -17, -29, -41, -80, -100]; for (let k = 0; k < 9; k++) quayBusy.push(-12 * k);
+  quayList.forEach((name, i) => {
+    const w = SIZES[name][0], fx = name === 'house_arcade' ? -108 : -124.5;
+    const sides = w >= 12 ? [-1, 1] : [i % 2 ? -1 : 1, i % 2 ? 1 : -1];
+    let placed = 0;
+    for (const sd of sides) {
+      const z = quayZ[i] + sd * (w / 2 - 2.2);
+      if (placed >= (w >= 12 ? 2 : 1)) break;
+      if (fx === -124.5 && quayBusy.some((b) => Math.abs(b - z) < 2.0)) continue;
+      out.push(P('bougainvillea_card', fx - 0.22, z, 270, { tag: 'bougainvillea_a' })); placed++;
+    }
+  });
+  // round 2: five more groups along the pavement between the palms (the bar lines its straights with crowds; their
+  // clothes are the most saturated pixels a level can put beside a road) and three on the grass bank inside the
+  // market corner facing the road, where the corner frame was bare grass
+  for (const [x, z] of [[-125, -50], [-125, -70], [-125, -90], [-125, 4], [-125, -17], [-125, -29], [-125, -41], [-125, -80], [-125, -100]]) out.push(P('spectator_group', x, z, 270, { tag: 'quay_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } }));
+  for (const [x, z] of [[-114, -137], [-104, -142], [-94, -147]]) { const n = nearest(x, z); out.push(P('spectator_group', x, z, facing(n.sample.x - x, n.sample.z - z), { tag: 'corner_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
   // pit carts on the pavement beside the grid tail (round 1: the plan's (-130, -3) and (-136, -3) were ON the
   // quay road, 4 m off the centreline, in the racing line of every lap after the first)
   out.push(P('pit_toolcart', -125.7, -6.5, 270, { tag: 'grid_carts' }));
@@ -390,11 +453,22 @@ function genMarketAndLowerStreet(rng) {
   // houses both sides
   const rows = lowerStreetRows();
   out.push(...rows.south.placements, ...rows.north.placements);
-  // bunting across the street every 9 m at road y + 6, long axis across the road (Z)
-  for (let i = 0; i < 22; i++) {
-    const x = -64 + 9 * i;
+  // bunting across the street, long axis across the road (Z). Round 2: every 4.5 m (was 9) and hung at road y + 5.0
+  // (was 6.0: anchors at 6.2 m, first floor balcony height, so the strings sit in the upper third of the chase frame
+  // instead of its top edge), alternating a 7 degree skew so the runs read as a zigzag between facing balconies
+  for (let i = 0; i < 43; i++) {
+    const x = -64 + 4.5 * i;
     const n = nearest(x, -158);
-    out.push(P('bunting_run', x, n.sample.z, 90, { tag: 'bunting', y: n.sample.y + 6.0 }));
+    out.push(P('bunting_run', x, n.sample.z, 90 + (i % 2 ? 7 : -7), { tag: 'bunting', y: n.sample.y + 5.0 }));
+  }
+  // chevron boards on the OUTSIDE of the market corner (a right hander: outside is the left, the quay side), in a row
+  // before and through the bend, turned toward the road so a kart slides off them (round 1 rule)
+  {
+    const T = trackTable(), s0 = T.wpS[7] - 6, s1 = T.wpS[9];
+    for (let k = 0; k < 4; k++) {
+      const s = s0 + ((s1 - s0) * (k + 0.5)) / 4, r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4);
+      out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_b' }));
+    }
   }
   // lamps alternating sides every 16 m on the pavements
   for (let i = 0; i < 12; i++) {
@@ -402,16 +476,13 @@ function genMarketAndLowerStreet(rng) {
     const r = roadside(n.s, side, n.sample.width / 2 + 0.6 + 1.25);
     out.push(P('street_lamp', r.x, r.z, r.rotFaceRoad, { tag: 'street_lamp_c' }));
   }
-  // bougainvillea x 14 on every second house front, both sides
-  out.push(...bougainvilleaOn(rows.south, rng, 'bougainvillea_c', 2, 7));
-  out.push(...bougainvilleaOn(rows.north, rng, 'bougainvillea_c', 2, 7));
   // spectators on the north pavement facing the road
   for (const x of [-30, 20, 70, 110]) {
     const n = nearest(x, -158), r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.6);
     out.push(P('spectator_group', r.x, r.z, r.rotFaceRoad, { tag: 'crowd_c', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } }));
   }
-  // chevron boards on the outside (north) of the right hand S bend, facing the approaching karts
-  for (const x of [-12, 8]) {
+  // chevron boards on the outside (north) of the right hand S bend, facing the approaching karts (round 2: four in a row, was two)
+  for (const x of [-12, -2, 8, 14]) {
     const n = nearest(x, -158), r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4);
     out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_c' }));
   }
@@ -420,6 +491,19 @@ function genMarketAndLowerStreet(rng) {
     const x = -60 + 22 * i, n = nearest(x, -158), r = roadside(n.s, 1, n.sample.width / 2 + 0.6 + 1.9);
     out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_c' }));
   }
+  // round 2: flags on both pavements every 11 m (the south row's gaps and the whole north pavement), 1.6 m behind the
+  // kerb so the pole clears the house fronts at 2.5 m, skipping any spot within 2.5 m of a lamp, crowd, board or flag
+  for (const side of [1, -1]) {
+    for (let i = 0; i < 17; i++) {
+      const x = (side > 0 ? -49 : -55) + 11 * i, n = nearest(x, -158), r = roadside(n.s, side, n.sample.width / 2 + 0.6 + 1.6);
+      if (!clearOf(out, r.x, r.z, 2.5)) continue;
+      out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_c' }));
+    }
+  }
+  // bougainvillea on every house front, both sides, two on the wide houses (round 2; was every second house, 7 a side),
+  // placed last so a cascade never shares its wall spot with a lamp, flag, board or crowd
+  out.push(...bougainvilleaOn(rows.south, rng, 'bougainvillea_c', 1, Infinity, out));
+  out.push(...bougainvilleaOn(rows.north, rng, 'bougainvillea_c', 1, Infinity, out));
   // terraces behind the south houses: contour lines base = 6, 9, 12, 15 (TRACK-PLAN 4.9)
   out.push(...genTerraces());
   // pines and palms on the terrace floors, nudged off a wall line if the plan put one there
@@ -442,6 +526,7 @@ function offTerraceLine(x, z) {
 }
 function genTerraces() {
   const out = [];
+  let walls = 0;
   const rows = lowerStreetRows();
   const pads = rows.south.placements.map((p) => { const [w, d] = SIZES[p.asset]; return { x0: p.x - w / 2 - 1, x1: p.x + w / 2 + 1, z0: p.z - d / 2 - 1, z1: p.z + d / 2 + 1 }; });
   const dir = [GRAD[1] / GRADN, -GRAD[0] / GRADN];   // along the line, south west to north east
@@ -459,6 +544,10 @@ function genTerraces() {
       if (pads.some((p) => x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1)) continue;   // house pads
       if (z < -139) continue;                                                          // the lower street houses and their pads end at z -139 (north is -Z)
       out.push(P('retaining_wall_terrace', x, z, TERRACE_ROT, { tag: 'terrace_k' + k, probe: [r1(x + DOWNHILL[0] * 1.6), r1(z + DOWNHILL[1] * 1.6)] }));
+      // round 2: a bougainvillea cascade over every third terrace wall, trough at the wall's downhill foot, facing downhill
+      // like the wall: the hillside inside the market corner and above the lower street was bare grass and pale stone in
+      // the corner frame (progress 0.15, 2 percent strongly saturated pixels)
+      if ((++walls % 3) === 1) out.push(P('bougainvillea_card', x + DOWNHILL[0] * 0.62, z + DOWNHILL[1] * 0.62, TERRACE_ROT, { tag: 'bougainvillea_terrace', probe: [r1(x + DOWNHILL[0] * 1.6), r1(z + DOWNHILL[1] * 1.6)] }));
     }
   }
   return out;
@@ -473,9 +562,30 @@ function genPiazza(rng) {
     void r;
   }
   for (const [x, z] of [[163, -136], [165, -128], [165, -120], [163, -112], [158, -104], [150, -98]]) { const n = nearest(x, z); out.push(P('tyre_wall', x, z, alongRoad(n.sample.tx, n.sample.tz), { tag: 'hairpin_tyres' })); }
-  for (const [x, z] of [[162, -146], [167, -132], [166, -114], [155, -100]]) { const n = nearest(x, z), r = roadside(n.s, -1, 0); out.push(P('sign_chevron_board', x, z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_d' })); }
+  // chevron boards in a continuous row round the OUTSIDE of the hairpin (round 2: eight along the bend at even
+  // spacing, 2 m outside the kerb, was four; the bar lines the outside of every corner with boards)
+  {
+    const s0 = nearest(162, -146).s, s1 = nearest(155, -100).s;
+    for (let k = 0; k < 8; k++) {
+      const s = s0 + ((s1 - s0) * (k + 0.5)) / 8, r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.4);
+      out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_d' }));
+    }
+  }
   out.push(P('cafe_terrace', 128, -136, 20, { tag: 'piazza_cafe' }));
   out.push(P('cafe_terrace', 142, -112, 200, { tag: 'piazza_cafe' }));
+  // round 2: the grass bank OUTSIDE the hairpin entry (left of travel from the lower street's end to the first board) was
+  // bare in the frames at progress 0.35 and 0.42: four crowds on the bank and three flags between them and the kerb
+  {
+    const T = trackTable(), s19 = T.wpS[19];
+    for (let k = 0; k < 4; k++) {
+      const s = s19 + 8 + 12 * k, sm = atDistance(s), r = roadside(s, -1, sm.width / 2 + 3.5);
+      if (clearOf(out, r.x, r.z, 3)) out.push(P('spectator_group', r.x, r.z, r.rotFaceRoad, { tag: 'crowd_d_entry' }));
+      if (k < 3) { const f = roadside(s + 6, -1, sm.width / 2 + 2.0); if (clearOf(out, f.x, f.z, 2.5)) out.push(P('race_flag_pole', f.x, f.z, f.rotAlong, { tag: 'flags_d_entry' })); }
+    }
+  }
+  // round 2: a row of four market stalls (red and white awnings) along the piazza's north edge facing the lower street's
+  // end and the hairpin entry, 2 m clear of the north cafe's swung corner; the lower street's last frames look straight at them
+  for (const x of [126, 130, 134, 138]) out.push(P('market_stall', x, -143.5, 180, { tag: 'piazza_market' }));
   for (const [x, z] of [[122, -136], [150, -136], [122, -112], [150, -112]]) out.push(P('palm_tall', x, z, rng() * 360, { tag: 'piazza_palm', tilt: 2 + 4 * rng() }));
   for (const [x, z] of [[130, -128], [142, -128], [130, -120], [142, -120]]) out.push(P('street_lamp', x, z, 0, { tag: 'piazza_lamp' }));
   for (const [x, z] of [[124, -128], [148, -120]]) out.push(P('produce_crate_stack', x, z, rng() * 360, { tag: 'piazza_crates' }));
@@ -485,8 +595,26 @@ function genPiazza(rng) {
   const southE = houseRow({ from: [118, -84], dir: [-1, 0], face: [0, -1], list: ['house_corner_shop', 'house_balcony_row', 'house_narrow_tall', 'house_wide_2storey'], tag: 'exit_south' });
   const northE = houseRow({ from: [118, -100], dir: [-1, 0], face: [0, 1], list: ['house_arcade', 'house_narrow_tall', 'house_balcony_row', 'house_corner_shop'], tag: 'exit_north' });
   out.push(...southE.placements, ...northE.placements);
-  out.push(...bougainvilleaOn(southE, rng, 'bougainvillea_e', 2, 2));
-  out.push(...bougainvilleaOn(northE, rng, 'bougainvillea_e', 2, 2));
+  // round 2: the exit street gets bunting between its facing balconies (four runs over the housed stretch, x 110 to 77;
+  // the plan kept this street open for the harbour view, which starts where the houses end at x 74) and flags on the
+  // north pavement between the houses' doors
+  for (const x of [110, 99, 88, 77]) { const n = nearest(x, -92), r = roadside(n.s, 1, 0); out.push(P('bunting_run', r.x, r.z, r.rotFaceAhead + (x % 2 ? 7 : -7), { tag: 'bunting_e', y: n.sample.y + 5.0 })); }
+  for (const x of [105, 94, 83]) { const n = nearest(x, -92), r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.6); if (clearOf(out, r.x, r.z, 2.5)) out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_e' })); }
+  // round 2: the gate bend (a left hander, outside on the right) lines its outside with four boards, none within 4 m of
+  // the gate's piers, and a crowd either side of the road just before the gate: the frame into the sun at progress 0.51
+  // was the arch, grass and kerbs
+  {
+    const T = trackTable(), G = LANDMARKS.gate;
+    for (const pr of [0.505, 0.511, 0.517, 0.523, 0.529]) {
+      const s = pr * T.length, r = roadside(s, 1, atDistance(s).width / 2 + 0.6 + 1.4);
+      if (Math.hypot(r.x - G.x, r.z - G.z) < 9 || !clearOf(out, r.x, r.z, 2.5)) continue;
+      out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_e' }));
+    }
+    const s = nearest(68, -70).s;
+    for (const side of [-1, 1]) { const r = roadside(s, side, atDistance(s).width / 2 + 3.0); out.push(P('spectator_group', r.x, r.z, r.rotFaceRoad, { tag: 'gate_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
+  }
+  out.push(...bougainvilleaOn(southE, rng, 'bougainvillea_e', 1, Infinity, out));
+  out.push(...bougainvilleaOn(northE, rng, 'bougainvillea_e', 1, Infinity, out));
   for (const [x, z] of [[100, -112], [84, -112]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'exit_pine' }));
   genPiazza.rows = { southE, northE };
   return out;
@@ -503,6 +631,10 @@ function genRise(rng) {
   genRise.rows = { westA, westB };
   // east side retaining wall along x = 80, face west toward the road, base on the road side (lower) terrace
   for (let i = 0; i < 18; i++) out.push(P('retaining_wall_terrace', 80, -47 + 6 * i, 270, { tag: 'rise_wall', probe: [78.4, -47 + 6 * i] }));
+  // round 2: bougainvillea cascades over every second module of that wall (the descent frame at progress 0.56 is the
+  // wall, grass and a kerb: nothing saturated in it), trough at the wall's foot on the road side, facing the road.
+  // Skipped where the wall stands at the kerb (the chicane's outside, z -38 to -14, where the tyre walls and boards are)
+  for (const z of [25, 40]) { const n = nearest(70, z), r = roadside(n.s, -1, n.sample.width / 2 + 3.0); if (clearOf(out, r.x, r.z, 3)) out.push(P('spectator_group', r.x, r.z, r.rotFaceRoad, { tag: 'rise_crowd', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
   for (const [x, z] of [[90, -40], [92, -10], [90, 20], [92, 50]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'rise_pine' }));
   for (const [x, z] of [[86, -25], [86, 5], [86, 35], [86, 58]]) out.push(P('palm_short', x, z, rng() * 360, { tag: 'rise_palm', tilt: 2 + 4 * rng() }));
   // lamps on the west pavement (right of travel heading south) every 18 m
@@ -511,10 +643,15 @@ function genRise(rng) {
   for (let i = 0; i < 6; i++) { const r = roadside(sF0 + 6 + 18 * i, 1, atDistance(sF0 + 6 + 18 * i).width / 2 + 0.6 + 1.25); out.push(P('street_lamp', r.x, r.z, r.rotFaceRoad, { tag: 'rise_lamp' })); }
   // chicane furniture
   for (const [x, z] of [[80, -22], [80, -16], [50, 18], [50, 24]]) { const n = nearest(x, z); out.push(P('tyre_wall', x, z, alongRoad(n.sample.tx, n.sample.tz), { tag: 'chicane_tyres' })); }
-  // chevron boards before the right hand bend of the chicane on its outside (east), facing the approaching karts
-  for (const z of [-38, -33, -28, -23]) { const n = nearest(74, z); const r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', r.x, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_f' })); }
-  for (const [x, z] of [[50, -30], [78, 10], [52, 40]]) { const n = nearest(x, z); out.push(P('spectator_group', x, z, facing(n.sample.x - x, n.sample.z - z), { tag: 'crowd_f', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
-  for (let i = 0; i < 4; i++) { const s = sF0 + 10 + 25 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.9); out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_f' })); }
+  // chevron boards before the right hand bend of the chicane on its outside (east), facing the approaching karts.
+  // Round 2 (integrator, track's request): the boards' wall side end touches the retaining wall face (x 79.6) and the flag
+  // poles and the crowd stand against it, so a kart that runs the flat verge is deflected toward the road by the angled
+  // board face instead of being pinned between a pole and the wall (verge_probe: 13.6 m/s to 0).
+  for (const z of [-38, -33, -28, -23]) { const n = nearest(74, z); const r = roadside(n.s, -1, n.sample.width / 2 + 0.6 + 1.4); out.push(P('sign_chevron_board', 78.5, r.z, r.rotFaceBackToward(CHEVRON_TURN), { tag: 'chevrons_f' })); }
+  for (const [x, z] of [[50, -30], [79.2, 10], [52, 40]]) { const n = nearest(x, z); out.push(P('spectator_group', x, z, facing(n.sample.x - x, n.sample.z - z), { tag: 'crowd_f', moving: true, bob: { amp: 0.04, period: 0.9 + 0.3 * rng(), roll: 0, pitch: 0, phase: rng() * 6.283 } })); }
+  for (let i = 0; i < 4; i++) { const s = sF0 + 10 + 25 * i; const r = roadside(s, -1, atDistance(s).width / 2 + 0.6 + 1.9); out.push(P('race_flag_pole', 79.3, r.z, r.rotAlong, { tag: 'flags_f' })); }
+  // round 2: flags on the west pavement too, between the lamps
+  for (let i = 0; i < 5; i++) { const s = sF0 + 15 + 22 * i; const r = roadside(s, 1, atDistance(s).width / 2 + 0.6 + 1.6); if (clearOf(out, r.x, r.z, 2.5)) out.push(P('race_flag_pole', r.x, r.z, r.rotAlong, { tag: 'flags_f_west' })); }
   void sF1;
   // the cliff entry lay by (pad y 20.6)
   out.push(P('pit_toolcart', 72, 78, 90, { tag: 'layby_carts' }));
@@ -522,6 +659,15 @@ function genRise(rng) {
   for (const [x, z] of [[84, 74], [84, 80], [84, 86], [82, 92]]) out.push(P('tyre_wall', x, z, 90, { tag: 'layby_tyres' }));
   out.push(P('grandstand_small', 76, 90, 300, { tag: 'layby_grandstand' }));
   for (const [x, z] of [[67, 72], [67, 94], [84, 71], [84, 95]]) out.push(P('race_flag_pole', x, z, 270, { tag: 'flags_layby' }));
+  // round 2: bougainvillea on every house of the rise's west rows, placed last so it avoids the pavement furniture,
+  // and the wall cascades from above, placed here for the same reason (a crowd stands at (78, 10))
+  for (let i = 0; i < 18; i++) {
+    const z = -44 + 6 * i, n = nearest(79.4, z);
+    if (n.dist - n.sample.width / 2 < 2.5 || !clearOf(out, 79.4, z, 2.0)) continue;
+    out.push(P('bougainvillea_card', 79.4, z, 270, { tag: 'bougainvillea_f', probe: [78.4, z] }));
+  }
+  out.push(...bougainvilleaOn(westA, rng, 'bougainvillea_f', 1, Infinity, out));
+  out.push(...bougainvilleaOn(westB, rng, 'bougainvillea_f', 1, Infinity, out));
   return out;
 }
 

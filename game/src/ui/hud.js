@@ -20,7 +20,7 @@
  * The minimap (ui/minimap.js) mounts its canvas inside #hud; everything in here is DOM.
  * Plain hyphens only in every string.
  */
-import { ensureFonts, CORAL, INK, PAPER, FONT, WIDE, PIX, h, esc, fmtTime, ordinal } from './screens.js?v=r1-20260906113009';
+import { ensureFonts, CORAL, INK, PAPER, FONT, WIDE, PIX, h, esc, fmtTime, ordinal } from './screens.js?v=r2-20260906125925';
 
 export const ITEM_KEYS = ['buoy', 'cannonball', 'crate', 'espresso', 'shield'];
 export const ITEM_NAMES = { buoy: 'Chaser buoy', cannonball: 'Cannonball', crate: 'Spill crate', espresso: 'Espresso', shield: 'Foam shield' };

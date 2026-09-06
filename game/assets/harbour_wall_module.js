@@ -3,6 +3,8 @@
 // stone shade base course, a rounded parapet lip, a 2.5 m cap walkway, one step down and a
 // lower quay ledge on the landward side, each riser in blocks, ends jointed, a teal mooring
 // post on the cap. Every up face bleached, every long convex edge a lighter strip.
+// Round 2 (triangle budget, 30 placed): the painted edge is one strip per course, not one per block.
+// 1376 -> about 1100 tris, blocks and joints unchanged.
 export default function (THREE) {
   const g = new THREE.Group();
   const col = (hex, l = 0, s = 0) => new THREE.Color(hex).offsetHSL(0, s, l);
@@ -38,8 +40,8 @@ export default function (THREE) {
       const inset = rnd() * 0.02;
       const mm = m || pick();
       bx(parent, len - GAP, h - GAP, depth - inset, mm, x0 + len / 2, y0 + h / 2, -(depth - inset) / 2);
-      if (edge) bx(parent, len - GAP, 0.04, 0.04, edge, x0 + len / 2, y0 + h - 0.02, -0.02 - inset);
     }
+    if (edge) bx(parent, L - GAP, 0.04, 0.04, edge, 0, y0 + h - 0.02, -0.03);   // one painted edge per course
   };
 
   // Seaward face: pivot at the base line z = 3, leaning back 10 degrees (top toward -Z).

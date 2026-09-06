@@ -42,7 +42,8 @@
  * paint parts merge into their own bucket per joint (one extra draw per kart). And a kart whose
  * centre is within NEAR_CULL metres of the chase camera (horizontally) is hidden, so an AI kart
  * sitting on the camera no longer pushes a helmet through the bottom of the frame; the followed
- * kart is never culled.
+ * kart is never culled. Round 2: the camera came in to 2.8 m, so the cull radius dropped from 3.1 m to
+ * 2.0 m (3.1 m would have hidden a kart half a length behind the player and alongside it).
  *
  * Round 1 draws: the rear wheels share one spin group on the axle line and bake together (a wheel's
  * worth of draws off every kart, 36 to 32 meshes); `hero: false` in the constructor bakes the
@@ -50,9 +51,9 @@
  * matte baked kart.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r1-20260906113009';
-import { KART } from './physics.js?v=r1-20260906113009';
-import { CHASE } from './camera.js?v=r1-20260906113009';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r2-20260906125925';
+import { KART } from './physics.js?v=r2-20260906125925';
+import { CHASE } from './camera.js?v=r2-20260906125925';
 
 const SPARK_COLOURS = [0x8fa9d6, 0x8fa9d6, 0xf07a2a, 0x7a4fc9];   // index by tier (0 unused)
 const FLARE_COLOUR = 0xffc48a;
@@ -60,7 +61,8 @@ const MAX_KARTS = 8;
 const SPARKS_PER_KART = 96;
 const FLARES_PER_KART = 14;
 const FLARE_CORE = 0xffe2b0, FLARE_FRINGE = 0xf07a2a;
-const NEAR_CULL = 3.1, NEAR_SHOW = 3.5;   // metres, horizontal, camera to kart centre: hide under the first, show again past the second
+const FAR_CULL = 220;   // metres, horizontal: an AI kart beyond this is not drawn (round 2, integrator)
+const NEAR_CULL = 2.0, NEAR_SHOW = 2.4;   // metres, horizontal, camera to kart centre: hide under the first, show again past the second (round 2 camera: 2.8 m back, 1.05 m up, frame bottom at -32 degrees, so a kart nearer than 2 m puts its wheels in the bottom 15 percent; the player's own kart sits at 2.8 m and a kart alongside it at 3.2 m or more)
 
 /**
  * The clearcoat paint: colour, roughness and metalness come from the vertices the render module's
@@ -78,7 +80,7 @@ class PaintMaterial extends THREE.MeshPhysicalMaterial {
     this.metalness = 1;
     this.clearcoat = 1.0;
     this.clearcoatRoughness = 0.12;
-    this.envMapIntensity = 3.0;     // the rig runs scene.environmentIntensity at about 0.1 for the fill; paint reflects more sky than plaster
+    this.envMapIntensity = 1.0;     // round 2: the rig runs scene.environmentIntensity at 0.40 (was 0.1 when this was 3.0); 3.0 made the red kart a salmon sky mirror
     this.specularIntensity = 1.0;
     this.name = 'kart_paint';
   }
@@ -121,7 +123,7 @@ function swapPaint(root) {
     if (g && g.attributes && g.attributes.color && g.attributes.aRM) { o.material = paintFor(o.material); n++; return; }
     const src = o.material;
     if (src && src.isMeshStandardMaterial && !src.isVertexPBR) {
-      const m = new THREE.MeshPhysicalMaterial({ color: src.color.clone(), roughness: src.roughness, metalness: src.metalness, side: src.side, clearcoat: 1.0, clearcoatRoughness: 0.12, envMapIntensity: 3.0 });
+      const m = new THREE.MeshPhysicalMaterial({ color: src.color.clone(), roughness: src.roughness, metalness: src.metalness, side: src.side, clearcoat: 1.0, clearcoatRoughness: 0.12, envMapIntensity: 1.0 });
       m.name = 'kart_paint'; o.material = m; n++;
     }
   });
@@ -136,7 +138,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r1-20260906113009');
+      const m = await import('../render/materials.js?v=r2-20260906125925');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;
@@ -554,7 +556,7 @@ export class KartView {
         continue;
       }
       const wRef = parseRef((w.userData || {}).livery);
-      let n = applyLivery(w, (m) => ((m.userData && m.userData.livery === true) || matchesRef(m, wRef) ? paint(this.livery.body) : null));
+      let n = applyLivery(w, (m) => ((m.userData && m.userData.livery === true) || matchesRef(m, wRef) ? (this.hero ? paint(this.livery.body) : this.livery.body) : null));   // round 2: an AI cap keeps the livery colour in the metal set (no clearcoat bucket: 3 draws a kart)
       if (!n && i === 0) console.warn('[kartview] kart_wheel declares no livery cap (material.userData.livery or userData.livery \'metal:hex\')');
       apply(w, 'kart_wheel');
       swapPaint(w);
@@ -615,12 +617,12 @@ export class KartView {
         const l = m.userData && m.userData.livery;
         if (l === 'suit') return L.suit;
         if (l === 'helmet') return paint(L.helmet);
-        if (l === 'stripe') return paint(L.stripe);
+        if (l === 'stripe') return this.hero ? paint(L.stripe) : L.stripe;   // round 2: AI stripes stay in the metal set (one draw a kart)
         if (matchesRef(m, dSuit)) return L.suit;
         if (matchesRef(m, dAccent)) return L.helmet;                 // the second suit tone is the racer's colour
         if (matchesRef(m, dHelmet)) return paint(L.helmet);
         if (dSuit && m.name === dSuit.name && isDarkerToneOf(m, dSuit.hex)) return suitD;   // the suit's shade tone
-        if (dHelmet && m.name === dHelmet.name && !matchesRef(m, dHelmet) && lumOf(m) > 0.45) return paint(L.stripe);   // the helmet stripe: the light metal that is not the helmet
+        if (dHelmet && m.name === dHelmet.name && !matchesRef(m, dHelmet) && lumOf(m) > 0.45) return this.hero ? paint(L.stripe) : L.stripe;   // the helmet stripe: the light metal that is not the helmet
         return null;
       });
       if (!n) console.warn('[kartview] driver_racer declares no livery (material.userData.livery or userData.livery/suitAccent/helmet \'recipe:hex\'); driver keeps its own colours');
@@ -704,6 +706,7 @@ export class KartView {
       if (d < NEAR_CULL) this._nearCulled = true;
       else if (d > NEAR_SHOW) this._nearCulled = false;
       if (this._nearCulled) visible = false;
+      if (d > FAR_CULL) visible = false;   // round 2 (integrator): a kart 220 m off is 4 px wide and cost 7k triangles (all 7 at the grid seen from the hairpin exit)
     } else this._nearCulled = false;
     o.visible = visible;
 

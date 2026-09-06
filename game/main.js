@@ -31,41 +31,42 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r1-20260906113009';
-import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r1-20260906113009';
-import { createSky } from './src/render/sky.js?v=r1-20260906113009';
-import { createLightingRig } from './src/render/lighting.js?v=r1-20260906113009';
-import { createPost } from './src/render/post.js?v=r1-20260906113009';
-import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r1-20260906113009';
-import { buildRoad } from './src/track/road.js?v=r1-20260906113009';
-import { buildTerrain } from './src/track/terrain.js?v=r1-20260906113009';
-import { buildSea } from './src/track/sea.js?v=r1-20260906113009';
-import { World } from './src/track/collision.js?v=r1-20260906113009';
-import { buildLevel } from './src/level/build.js?v=r1-20260906113009';
-import { GRID, PLACEMENTS } from './src/level/placements.js?v=r1-20260906113009';
-import { KartBody, resolveBumps } from './src/kart/physics.js?v=r1-20260906113009';
-import { Player } from './src/kart/player.js?v=r1-20260906113009';
-import { KartView } from './src/kart/kartview.js?v=r1-20260906113009';
-import { ChaseCamera } from './src/kart/camera.js?v=r1-20260906113009';
-import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r1-20260906113009';
-import { Director } from './src/ai/director.js?v=r1-20260906113009';
-import { ItemSystem } from './src/items/items.js?v=r1-20260906113009';
-import { Screens } from './src/ui/screens.js?v=r1-20260906113009';
-import { HUD } from './src/ui/hud.js?v=r1-20260906113009';
-import { Minimap } from './src/ui/minimap.js?v=r1-20260906113009';
-import { Input } from './src/ui/input.js?v=r1-20260906113009';
-import { TouchControls } from './src/ui/touch.js?v=r1-20260906113009';
-import { Audio } from './src/audio/audio.js?v=r1-20260906113009';
-import { Events } from './src/game/events.js?v=r1-20260906113009';
-import { Race } from './src/game/race.js?v=r1-20260906113009';
-import { createTelemetry } from './src/game/telemetry.js?v=r1-20260906113009';
+import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r2-20260906125925';
+import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r2-20260906125925';
+import { createSky } from './src/render/sky.js?v=r2-20260906125925';
+import { createLightingRig } from './src/render/lighting.js?v=r2-20260906125925';
+import { createPost } from './src/render/post.js?v=r2-20260906125925';
+import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r2-20260906125925';
+import { buildRoad } from './src/track/road.js?v=r2-20260906125925';
+import { buildTerrain } from './src/track/terrain.js?v=r2-20260906125925';
+import { buildSea } from './src/track/sea.js?v=r2-20260906125925';
+import { World } from './src/track/collision.js?v=r2-20260906125925';
+import { buildLevel } from './src/level/build.js?v=r2-20260906125925';
+import { GRID, PLACEMENTS } from './src/level/placements.js?v=r2-20260906125925';
+import { KartBody, resolveBumps } from './src/kart/physics.js?v=r2-20260906125925';
+import { Player } from './src/kart/player.js?v=r2-20260906125925';
+import { KartView } from './src/kart/kartview.js?v=r2-20260906125925';
+import { ChaseCamera } from './src/kart/camera.js?v=r2-20260906125925';
+import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r2-20260906125925';
+import { Director } from './src/ai/director.js?v=r2-20260906125925';
+import { ItemSystem } from './src/items/items.js?v=r2-20260906125925';
+import { Screens } from './src/ui/screens.js?v=r2-20260906125925';
+import { HUD } from './src/ui/hud.js?v=r2-20260906125925';
+import { Minimap } from './src/ui/minimap.js?v=r2-20260906125925';
+import { Input } from './src/ui/input.js?v=r2-20260906125925';
+import { TouchControls } from './src/ui/touch.js?v=r2-20260906125925';
+import { Audio } from './src/audio/audio.js?v=r2-20260906125925';
+import { Events } from './src/game/events.js?v=r2-20260906125925';
+import { Race } from './src/game/race.js?v=r2-20260906125925';
+import { createTelemetry } from './src/game/telemetry.js?v=r2-20260906125925';
 
 const Q = new URLSearchParams(location.search);
 const STAMP = window.__BUILD_STAMP__ || null;
-const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r1';
+const ROUND = STAMP && /^r\d+/.test(STAMP) ? STAMP.match(/^r\d+/)[0] : 'r2';
 const STRICT = Q.get('strict') === '1';
 const LAPS = Math.max(1, Math.min(9, parseInt(Q.get('laps') || '3', 10) || 3));
 const DROP = Q.get('drop') === '1';
+const ITEM_KNOB = Q.get('item') || null;   // round 2 dev knob: ?item=shield gives the player that item at GO so the gate can capture it on demand
 const DEG = Math.PI / 180;
 const PLAYER = { id: 1, name: 'Marisol', livery: { body: 0xed5851, suit: 0xf1e6d2, helmet: 0xed5851, stripe: 0xf1e6d2 } };
 const PLAYER_GRID_SLOT = 7;   // P8, the back of the grid: the field is ahead, the race has overtaking in it
@@ -317,7 +318,7 @@ async function boot() {
     screens.results({ standings, playerPosition: race.positionOf(PLAYER.id) });
   });
   events.on('countdown', ({ n }) => hud.countdown(n));
-  events.on('go', () => hud.countdown(0));
+  events.on('go', () => { hud.countdown(0); if (ITEM_KNOB && items.give(PLAYER.id, ITEM_KNOB)) console.info('[game] ?item=' + ITEM_KNOB + ' given to the player at GO (dev knob, round 2)'); });
   events.on('finalLap', ({ id }) => { if (id === PLAYER.id) { hud.banner('FINAL LAP'); audio.music('final'); } });
   events.on('finish', ({ id }) => { if (id === PLAYER.id) hud.banner('FINISH'); });
   events.on('placeChange', ({ id, from, to }) => { if (id === PLAYER.id && from > 0) hud.flashPlace(to < from); });
@@ -376,19 +377,27 @@ async function boot() {
   const FINE_FAR = tier.name === 'phone' ? 90 : 140;   // the rig's scatter fade ends here (render/lighting.js defaultCullFade)
   const casterBlocks = [...level.blocks.values()].map((g) => { const meshes = []; g.traverse((o) => { if (o.isMesh && o.castShadow) meshes.push(o); }); return { g, box: g.userData.box, meshes, on: true, fine: !!g.userData.fine }; });   // only the buckets the bake marked as casters (round 1: fillets, glass and caps never cast)
   // the seven AI drivers do not cast (the chassis and wheels give the contact shadow); the player's does
+  const trisOf = (o) => { const g = o.geometry; return g ? (g.index ? g.index.count : g.attributes.position.count) / 3 : 0; };
   for (const v of views.values()) {
+    // round 2 (integrator): no kart mesh under 300 triangles casts (a visor, a vent, a hub cap or a 12 triangle stripe
+    // each cost a shadow draw for nothing anyone can see: 8 calls on the player kart)
+    v.object.traverse((o) => { if (o.isMesh && trisOf(o) < 300) o.castShadow = false; });
     if (v.id === PLAYER.id) continue;
     if (v.driver) v.driver.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+    // an AI kart casts from its largest chassis bucket only (the frame): the body panels sit inside that footprint
+    // (2 shadow draws and 3.3k triangles a kart at the hairpin exit with the pack ahead)
+    { let big = null; v.object.traverse((o) => { if (o.isMesh && o.castShadow && (!big || trisOf(o) > trisOf(big))) big = o; }); v.object.traverse((o) => { if (o.isMesh && o !== big) o.castShadow = false; }); }
     // the AI wheels sit inside the chassis shadow at a 14 degree sun: the chassis alone gives the contact shadow (16 draws per kart saved in the shadow pass)
     for (const w of v.wheels || []) { const n = w && (w.pivot || w.spin); if (n && n.traverse) n.traverse((o) => { if (o.isMesh) o.castShadow = false; }); }
   }
   const MOVER_FAR = { mooring_buoy: 120, rowing_boat: 220, spectator_group: 220, fishing_boat: 250 };   // an 8 m boat at 250 m is 20 px long in the haze   // 0.4 m buoy at 120 m and a 3 m boat or a crowd at 220 m are under 3 px tall
   const casterMovers = level.movers.map((m) => { const meshes = []; m.object.traverse((o) => { if (o.isMesh) meshes.push(o); }); return { obj: m.object, meshes, on: true, far: MOVER_FAR[m.asset] || 0 }; });
-  const DRIVER_FAR = 80;   // 5 px of helmet
+  const DRIVER_FAR = 60;   // round 2: 7 px of helmet (was 80)
   // terrain tiles cast by the same distance rule as the blocks (round 1: every tile cast every frame, 43k triangles and 14 calls of shadow pass at the hairpin exit)
   const casterTerrain = (terrain.tiles || []).filter((t) => t.isMesh && t.geometry).map((t) => { t.updateMatrixWorld(true); if (!t.geometry.boundingBox) t.geometry.computeBoundingBox(); const box = t.geometry.boundingBox.clone().applyMatrix4(t.matrixWorld); return { t, box, on: true }; });
   const casterKarts = [...views.values()].map((v) => { const meshes = []; v.object.traverse((o) => { if (o.isMesh && o.castShadow) meshes.push(o); }); return { obj: v.object, meshes, on: true, driver: v.hero ? null : (v.driver || null) }; });
   let castFrame = 0;
+  const castFwd = new THREE.Vector3(), castTmp = new THREE.Vector3();
   function updateCasters() {
     if ((castFrame++ % 6) !== 0) return;
     const cp = camera.position;
@@ -408,9 +417,14 @@ async function boot() {
       const on = c.box.distanceToPoint(cp) < CAST_DIST;
       if (on !== c.on) { c.on = on; c.t.castShadow = on; }
     }
+    camera.getWorldDirection(castFwd);
     for (const c of casterKarts) {
       const d = c.obj.position.distanceTo(cp);
-      const on = d < CAST_DIST;
+      // round 2 (integrator): a kart more than 8 m behind the camera plane cannot throw its shadow into the frame (a 0.6 m
+      // kart at a 14 degree sun shadows about 2.5 m), so the seven AI chassis behind the player leave the shadow pass (45k
+      // triangles at the hairpin exit peak when the player leads)
+      const behind = -(castTmp.copy(c.obj.position).sub(cp).dot(castFwd));
+      const on = d < (c.driver ? 30 : CAST_DIST) && behind < 8;   // AI karts cast within 30 m (SSAO carries the contact darkening beyond that), the player always within CAST_DIST
       if (on !== c.on) { c.on = on; for (const m of c.meshes) m.castShadow = on; }
       if (c.driver) c.driver.visible = d < DRIVER_FAR;   // an AI driver past 120 m is 4 px tall: 8 draws and 7k triangles a kart for nothing
     }

@@ -2,6 +2,7 @@
 // cascades away from the wall (vertex bend on a segmented plane), over an ExtrudeGeometry
 // trough with a U profile swept along its 1 m length, a lighter extruded rim, an inset soil slab,
 // and three stems each of two kinked cylinder segments. Mounts against a wall at the back.
+// Round 2 (triangle budget, 105 placed): stems as open 6 segment cylinders. 296 -> about 180 tris.
 export default function (THREE) {
   const g = new THREE.Group();
   const DS = THREE.DoubleSide;
@@ -11,7 +12,7 @@ export default function (THREE) {
   const UP = V3(0, 1, 0);
   const limb = (a, b, ra, rb, mat) => {
     const d = b.clone().sub(a), L = d.length();
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(rb, ra, L, 8), mat);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rb, ra, L, 6, 1, true), mat);
     m.position.copy(a).add(b).multiplyScalar(0.5);
     m.quaternion.setFromUnitVectors(UP, d.normalize());
     g.add(m);
