@@ -61,7 +61,7 @@ export const SIZES = {
   kerb_module: [4.00, 0.60, 0.30, 230, false], stone_guardwall: [4.00, 0.50, 0.90, 40, false], tyre_wall: [2.00, 0.70, 1.20, 24, false],
   harbour_bollard: [0.50, 0.50, 0.90, 40, false], bunting_run: [11.00, 0.20, 1.20, 22, false], start_gantry: [18.00, 2.40, 7.50, 1, false],
   lap_arch: [14.00, 1.60, 6.50, 1, false], race_flag_pole: [1.60, 0.30, 4.20, 30, false], grandstand_small: [12.00, 6.00, 4.80, 2, false],
-  cafe_terrace: [8.00, 6.00, 2.60, 3, false], spectator_group: [3.00, 0.40, 1.90, 26, true], street_lamp: [0.80, 0.80, 4.50, 34, false],
+  cafe_terrace: [8.00, 6.00, 2.60, 3, false], spectator_group: [3.50, 1.50, 2.55, 26, true], street_lamp: [0.80, 0.80, 4.50, 34, false],
   market_stall: [3.00, 2.40, 2.80, 8, false], produce_crate_stack: [1.20, 1.00, 1.30, 16, false], house_narrow_tall: [8.00, 10.00, 11.60, 14, false],
   house_wide_2storey: [12.00, 10.00, 8.40, 12, false], house_corner_shop: [10.00, 10.00, 8.40, 6, false], house_arcade: [12.00, 10.00, 11.60, 6, false],
   house_balcony_row: [10.00, 10.00, 11.60, 10, false], town_stair_module: [3.00, 6.00, 3.00, 8, false], retaining_wall_terrace: [6.00, 0.80, 3.00, 40, false],
@@ -70,7 +70,7 @@ export const SIZES = {
   harbour_wall_module: [6.00, 6.00, 2.60, 30, false], quay_edge_module: [6.00, 1.20, 1.60, 24, false], jetty_module: [8.00, 2.50, 1.40, 9, false],
   fishing_boat: [3.00, 8.50, 3.60, 7, true], rowing_boat: [1.60, 4.20, 0.80, 6, true], mooring_buoy: [0.90, 0.90, 1.30, 8, true],
   harbour_davit: [1.20, 3.60, 3.40, 2, false], palm_tall: [7.00, 7.00, 9.00, 16, false], palm_short: [6.00, 6.00, 6.50, 12, false],
-  pine_umbrella: [10.00, 10.00, 11.00, 14, false], bougainvillea_card: [3.00, 0.40, 4.00, 24, false], rock_cliff_module: [8.00, 6.00, 7.00, 30, false],
+  pine_umbrella: [10.00, 10.00, 11.00, 14, false], bougainvillea_card: [3.00, 1.40, 4.00, 24, false], rock_cliff_module: [8.00, 6.00, 7.00, 30, false],
   rock_boulder: [2.40, 2.00, 1.60, 20, false], beach_umbrella: [2.40, 2.40, 2.30, 12, false], agave_cluster: [1.80, 1.80, 1.20, 14, false],
   deck_chair: [0.60, 1.30, 0.90, 14, false], lifeguard_hut: [3.00, 3.00, 4.60, 1, false], pedalo: [1.80, 3.20, 1.40, 3, false],
   sign_chevron_board: [2.40, 0.30, 1.60, 18, false], sign_round_post: [0.80, 0.30, 2.60, 12, false], rock_sea_stack: [12.00, 10.00, 14.00, 3, false],
@@ -210,7 +210,7 @@ export function roadside(s, side, offset) {
 function P(asset, x, z, rot, extra = {}) {
   if (!SIZES[asset]) throw new Error(`placements: unknown asset ${asset}`);
   const p = { asset, x: r1(x), z: r1(z), rot: r1(norm360(rot)), y: null, moving: false, tag: extra.tag || asset, block: blockOf(x, z) };
-  for (const k of ['y', 'moving', 'probe', 'lift', 'dy', 'tilt', 'bob', 'alignRoad', 'paint']) if (extra[k] !== undefined) p[k] = extra[k];
+  for (const k of ['y', 'moving', 'probe', 'lift', 'dy', 'tilt', 'bob', 'alignRoad', 'paint', 'front', 'end', 'run']) if (extra[k] !== undefined) p[k] = extra[k];
   // Round 2: spectator groups are STATIC. As movers each group was up to 3 draws plus its shadow pass (three card
   // materials, merged per instance); baked into a block its three cards join the one shared card bucket the block
   // already draws for bunting, flags and bougainvillea, so 32 groups cost 0 extra draws instead of about 100 at
@@ -293,13 +293,36 @@ function crowdRun(out, x, z, rot, n, tag, opts = {}) {
   const a = rot / DEG, ax = Math.cos(a), az = -Math.sin(a);       // along the run
   const fx = Math.sin(a), fz = Math.cos(a);                        // facing (toward the road)
   const pitch = opts.pitch || 2.7, back = opts.back === undefined ? 0.45 : opts.back;
+  // round 5: `front` (default on) asks build.js for a modelled front row of figures on the ground in front of the
+  // group's card stack (level/crowdrow.js); the stack itself (three card layers 0.3 m back and up) is applied to
+  // every spectator_group at build time, so a group here is a placement like before
+  const front = opts.front === undefined ? true : !!opts.front;
+  // `end` marks the run's outer groups (-1 at the local -X end, +1 at +X) so build.js tapers their back layers toward
+  // the run and stands a figure over the front layer's cut edge; `run` groups the placements of one run so the phone
+  // tier's density drops whole runs, not every second card of a run (which exposed every cut edge)
+  const run = crowdRun.count = (crowdRun.count || 0) + 1;
   for (let i = 0; i < n; i++) {
     const t = i - (n - 1) / 2;
     const depth = i % 2 ? back : 0;
     const end = n > 1 && (i === 0 || i === n - 1);
     const yaw = end ? (i === 0 ? -24 : 24) : (i % 2 ? 6 : -6);
-    out.push(P('spectator_group', x + ax * t * pitch - fx * depth, z + az * t * pitch - fz * depth, rot + yaw, { tag }));
+    out.push(P('spectator_group', x + ax * t * pitch - fx * depth, z + az * t * pitch - fz * depth, rot + yaw, { tag, front, end: end ? (i === 0 ? -1 : 1) : 0, run }));
   }
+}
+/**
+ * Round 5 (foliage placements): the umbrella pine crown is a set of cards, three of them near vertical at 60 degree
+ * spacing through the centre. Placed at a random yaw one of the three faced the chase camera square on along the
+ * racing line about a third of the time and the crown read as a flat card. The yaw is now derived from the nearest
+ * road tangent so every vertical card sits 30 degrees off the camera's line of sight along the road (the bisector
+ * of the 60 degree fan), with a 16 degree jitter from the same random draw the placement always took, so the seeded
+ * stream is unchanged for everything placed after a pine. rot = tangent - 31.35 + 60 k: the asset's first vertical
+ * card has its normal at azimuth 90 - 28.65 degrees in its own frame (pine_umbrella.js, a = i pi/3 + 0.5).
+ */
+function pineRot(x, z, r) {
+  const n = nearest(x, z);
+  const t = facing(n.sample.tx, n.sample.tz);
+  const k = Math.floor(r * 6), j = (r * 6 - k - 0.5) * 16;
+  return norm360(t - 31.35 + 60 * k + j);
 }
 /** the stall and crate dressing of a pavement stretch: fronts to the road, only where 3 m of pavement is clear */
 function pavementStalls(out, T, s0, s1, side, step, tag, max, crates = true) {
@@ -572,7 +595,7 @@ function genMarketAndLowerStreet(rng) {
   // terraces behind the south houses: contour lines base = 6, 9, 12, 15 (TRACK-PLAN 4.9)
   out.push(...genTerraces());
   // pines and palms on the terrace floors, nudged off a wall line if the plan put one there
-  for (const [x, z] of [[-40, -130], [0, -130], [-30, -114], [10, -114], [-20, -98], [20, -98]]) { const q = offTerraceLine(x, z); out.push(P('pine_umbrella', q[0], q[1], rng() * 360, { tag: 'terrace_pine' })); }
+  for (const [x, z] of [[-40, -130], [0, -130], [-30, -114], [10, -114], [-20, -98], [20, -98]]) { const q = offTerraceLine(x, z); out.push(P('pine_umbrella', q[0], q[1], pineRot(q[0], q[1], rng()), { tag: 'terrace_pine' })); }
   for (const [x, z] of [[-50, -114], [-10, -98], [30, -130], [40, -114]]) { const q = offTerraceLine(x, z); out.push(P('palm_short', q[0], q[1], rng() * 360, { tag: 'terrace_palm', tilt: 2 + 4 * rng() })); }
   return out;
 }
@@ -681,7 +704,7 @@ function genPiazza(rng) {
   }
   out.push(...bougainvilleaOn(southE, rng, 'bougainvillea_e', 1, Infinity, out));
   out.push(...bougainvilleaOn(northE, rng, 'bougainvillea_e', 1, Infinity, out));
-  for (const [x, z] of [[100, -112], [84, -112]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'exit_pine' }));
+  for (const [x, z] of [[100, -112], [84, -112]]) out.push(P('pine_umbrella', x, z, pineRot(x, z, rng()), { tag: 'exit_pine' }));
   genPiazza.rows = { southE, northE };
   return out;
 }
@@ -701,7 +724,7 @@ function genRise(rng) {
   // wall, grass and a kerb: nothing saturated in it), trough at the wall's foot on the road side, facing the road.
   // Skipped where the wall stands at the kerb (the chicane's outside, z -38 to -14, where the tyre walls and boards are)
   for (const z of [25, 40]) { const n = nearest(70, z), r = roadside(n.s, -1, n.sample.width / 2 + 3.0); if (clearOf(out, r.x, r.z, 3)) crowdRun(out, r.x, r.z, r.rotFaceRoad, 2, 'rise_crowd'); }
-  for (const [x, z] of [[90, -40], [92, -10], [90, 20], [92, 50]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'rise_pine' }));
+  for (const [x, z] of [[90, -40], [92, -10], [90, 20], [92, 50]]) out.push(P('pine_umbrella', x, z, pineRot(x, z, rng()), { tag: 'rise_pine' }));
   for (const [x, z] of [[86, -25], [86, 5], [86, 35], [86, 58]]) out.push(P('palm_short', x, z, rng() * 360, { tag: 'rise_palm', tilt: 2 + 4 * rng() }));
   // lamps on the west pavement (right of travel heading south) every 18 m
   const T = trackTable();
@@ -840,7 +863,7 @@ function genCliff(rng) {
     out.push(P('rock_cliff_module', r.x, r.z, r.rotFaceRoad, { tag: 'cliff_rock_inner', probe: [r1(foot.x), r1(foot.z)] }));
     innerRocks.push({ s, sm });
   }
-  for (const [x, z] of [[20, 130], [-10, 133], [-40, 134], [-100, 130], [-130, 126], [-150, 118]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'cliff_pine' }));
+  for (const [x, z] of [[20, 130], [-10, 133], [-40, 134], [-100, 130], [-130, 126], [-150, 118]]) out.push(P('pine_umbrella', x, z, pineRot(x, z, rng()), { tag: 'cliff_pine' }));
   innerRocks.slice(0, 12).forEach((rk, i) => {
     if (i % 2) return;
     const r = roadside(rk.s + (rng() - 0.5) * 4, 1, rk.sm.width / 2 + 0.6 + 3.3);
@@ -885,7 +908,7 @@ function genLighthouseAndBeach(rng) {
     out.push(P('retaining_wall_terrace', r.x, r.z, r.rotFaceRoad, { tag: 'descent_wall', probe: [r1(foot.x), r1(foot.z)] }));
     if (i % 2 === 1 && i < 8) { const q = roadside(s, 1, sm.width / 2 + 7.5); out.push(P('palm_short', q.x, q.z, rng() * 360, { tag: 'descent_palm', tilt: 2 + 4 * rng() })); }
   }
-  for (const [x, z] of [[-130, 60], [-128, 40]]) out.push(P('pine_umbrella', x, z, rng() * 360, { tag: 'descent_pine' }));
+  for (const [x, z] of [[-130, 60], [-128, 40]]) out.push(P('pine_umbrella', x, z, pineRot(x, z, rng()), { tag: 'descent_pine' }));
   // the beach
   const umbrellas = [];
   for (let i = 0; i < 6; i++) { umbrellas.push([-170, 28 + 8 * i]); umbrellas.push([-178, 31 + 8 * i]); }
@@ -929,7 +952,7 @@ function genLighthouseAndBeach(rng) {
  */
 function genSkyline(rng) {
   const out = [];
-  const pine = (x, z, tag, extra = {}) => out.push(P('pine_umbrella', x, z, rng() * 360, Object.assign({ tag }, extra)));
+  const pine = (x, z, tag, extra = {}) => out.push(P('pine_umbrella', x, z, pineRot(x, z, rng()), Object.assign({ tag }, extra)));
   const palm = (x, z, tag) => out.push(P('palm_tall', x, z, rng() * 360, { tag, tilt: 2 + 5 * rng() }));
   // 1. harbour mouth headland
   const ridge = [[-158, -149], [-166, -153], [-174, -157], [-182, -160], [-190, -162], [-198, -164], [-206, -167]];

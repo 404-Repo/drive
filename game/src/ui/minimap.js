@@ -13,7 +13,7 @@
  *                                    an array of { x, z } or anything with `at(progress01)` also works
  *   update(racers)                   [{ id, x, z, isPlayer }], 8 entries
  */
-import { CORAL, INK, PAPER } from './screens.js?v=r4-20260906171652';
+import { CORAL, INK, PAPER } from './screens.js?v=r5-20260906181225';
 
 const CSS = `
 #minimap{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:max(26px,env(safe-area-inset-bottom));width:160px;height:160px;

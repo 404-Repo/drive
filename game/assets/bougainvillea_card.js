@@ -1,8 +1,12 @@
-// bougainvillea_card c1: profile sweeps. Two blossom cards bent forward at the top so the mass
-// cascades away from the wall (vertex bend on a segmented plane), over an ExtrudeGeometry
-// trough with a U profile swept along its 1 m length, a lighter extruded rim, an inset soil slab,
-// and three stems each of two kinked cylinder segments. Mounts against a wall at the back.
-// Round 2 (triangle budget, 105 placed): stems as open 6 segment cylinders. 296 -> about 180 tris.
+// bougainvillea_card c2 (fix round 5, Ben's crowd and foliage depth round): the mass is THREE CROSSED
+// CARDS, not one flat quad. The main card (picture a, 3.0 x 3.3, bent forward at the top) stays
+// parallel to the wall; two narrower cards (picture b tall and airy at 1.6 x 2.6, picture a again at
+// 1.4 x 1.7, different scales) cross it at plus and minus 60 degrees yaw through the main plane, so
+// from any angle along the road at least one card is seen near face on and the silhouette is a
+// rounded mass 0.7 m out from the wall, the half behind the plane buried in the wall it mounts on
+// (the cards are symmetric about the trough, so the recentred group keeps the trough at the wall face).
+// Same trough, rim, soil and kinked stems as c1. About 200 tris (card group band 20 to 200 plus the
+// pot). Still mounts at the back.
 export default function (THREE) {
   const g = new THREE.Group();
   const DS = THREE.DoubleSide;
@@ -63,8 +67,11 @@ export default function (THREE) {
     return geo;
   };
   const back = put(cardGeo(3.0, 3.3, 0.14), ca, 0, 0.7 + 3.3 / 2, -0.12, 0, 0.02, 0);
-  const front = put(cardGeo(2.7, 3.0, 0.08), cb, 0.04, 0.6 + 3.0 / 2, 0.06, 0, -0.025, 0);
-  back.rotation.order = 'YXZ'; front.rotation.order = 'YXZ';
+  back.rotation.order = 'YXZ';
+  // two crossed cards at plus and minus 60 degrees through the main plane, each a different picture and scale
+  const cross = (geo, mat, x, y0, h, yaw) => { const m = put(geo, mat, x, y0 + h / 2, -0.06, 0, yaw, 0); m.rotation.order = 'YXZ'; return m; };
+  cross(cardGeo(1.6, 2.6, 0.06), cb, -0.55, 0.85, 2.6, Math.PI / 3);
+  cross(cardGeo(1.4, 1.7, 0.05), ca, 0.6, 1.5, 1.7, -Math.PI / 3);
 
   g.userData.mounts = 'back';
 

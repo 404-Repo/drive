@@ -90,9 +90,9 @@
  *     and a few dust puffs leave the wheel.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r4-20260906171652';
-import { KART } from './physics.js?v=r4-20260906171652';
-import { CHASE } from './camera.js?v=r4-20260906171652';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r5-20260906181225';
+import { KART } from './physics.js?v=r5-20260906181225';
+import { CHASE } from './camera.js?v=r5-20260906181225';
 
 const SPARK_COLOURS = [0xff8a2a, 0xff8a2a, 0xffd23a, 0xd6e6ff];   // index by tier (0 unused): round 4, orange, yellow, blue white (Ben's direction)
 const FLARE_COLOUR = 0xffc48a;
@@ -207,7 +207,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r4-20260906171652');
+      const m = await import('../render/materials.js?v=r5-20260906181225');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;
@@ -755,6 +755,11 @@ export class KartView {
         // material.transparent (the OPAQUE define), so toggling it at fade time would compile mid race
         c.userData.__baseOpacity = c.opacity; c.userData.__baseTransparent = c.transparent;
         c.transparent = true;
+        // round 5 (integrator): three 0.169 draws a transparent DoubleSide material in TWO passes (back faces, then
+        // front) unless forceSinglePass is set, and 22 of an AI kart's 24 buckets are DoubleSide, so the round 4 fade
+        // had doubled every AI kart's draws (47 calls a kart; 964 -> 810 at the hairpin exit with the pack ahead).
+        // At opacity 1 a single pass is exactly the opaque draw; inside the 0.8 m fade band the kart is a ghost either way.
+        c.forceSinglePass = true;
         map.set(m, c); out.push(c);
       }
       return c;

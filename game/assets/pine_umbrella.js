@@ -6,6 +6,7 @@
 // plus three near vertical cards crossing the centre so the canopy has depth from the side, all
 // around a small jittered dark core that hides the card junction. From an oblique motion frame the
 // silhouette is broken foliage clusters at different heights, never one primitive.
+// Round 5 (foliage depth): every bough card carries a crossed partner card rolled 60 degrees about its axis.
 export default function (THREE) {
   const g = new THREE.Group();
   const DS = THREE.DoubleSide;
@@ -86,12 +87,20 @@ export default function (THREE) {
     geo.translate(L * 0.32, 0, 0);   // pivot near the stem end, not the card centre
     return geo;
   };
+  // round 5: every bough is TWO crossed cards, the second the other picture at 0.8 scale rolled 60 degrees
+  // about the bough's own axis, so a bough is never one flat quad seen edge on from the road below
   const card = (mat, L, r, a, y, droop, roll) => {
     const m = new THREE.Mesh(cardGeo(L, L / 1.72, mat === ba), mat);
     m.position.set(CX + Math.cos(a) * r, y, CZ + Math.sin(a) * r);
     m.rotation.order = 'YZX';
     m.rotation.set(roll, -a, -droop);
     g.add(m);
+    const o = mat === ba ? bb : ba, L2 = L * 0.8;
+    const m2 = new THREE.Mesh(cardGeo(L2, L2 / 1.72, o === ba), o);
+    m2.position.copy(m.position);
+    m2.rotation.order = 'YZX';
+    m2.rotation.set(roll + Math.PI / 3, -a, -droop);
+    g.add(m2);
     return m;
   };
   // outer ring: 8 long cards drooping 12 to 20 degrees (the umbrella edge), alternating textures

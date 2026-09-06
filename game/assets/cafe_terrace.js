@@ -1,6 +1,9 @@
-// cafe_terrace candidate 0 (pass 2: domed umbrella with a valance): primitive assembly. Plank deck from boxes, pedestal tables from
-// cylinders, ladder back chairs from boxes, umbrellas as ten alternating triangle wedges with a
-// torus rim, a planter box with sphere foliage, an A frame chalkboard, six seated crowd cards.
+// cafe_terrace c1 (fix round 5, Ben's crowd depth round): the eight seated crowd cards on the chairs are
+// MODELLED seated figures (legs block under the table, six sided torso, sphere head, caps, one arm raised
+// or hanging, six suit colours from the style lock, about 60 tris each) and six standing figures line the
+// back edge either side of the planter, so the terrace crowd is geometry at every angle, 14 figures.
+// Below is c0 pass 2 as shipped: plank deck, pedestal tables, ladder back chairs, domed umbrellas with a
+// valance, planter, A frame chalkboard.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI, DS = THREE.DoubleSide;
@@ -24,7 +27,31 @@ export default function (THREE) {
   const leafA = M('foliage', 0x4f8a45, 0.8, 0), leafB = M('foliage', 0x2f5e3a, 0.8, 0), leafC = M('foliage', 0x5f9a4f, 0.8, 0);
   const flower = M('foliage', 0xd8388a, 0.75, 0);
   const board = M(null, 0x2f3336, 0.8, 0);
-  const crowd = M('card:crowd_a', 0xc98a5a, 0.85, 0, { side: DS });
+  // ---- modelled crowd figures (round 5: the front row is geometry, chunky toy proportions, under 70 tris each) ----
+  const suit = [M('fabric', 0xed5851, 0.8), M('fabric', 0x2f5fc4, 0.8), M('fabric', 0xf2c230, 0.8), M('fabric', 0x3fc7a0, 0.8), M('fabric', 0x7a4fc9, 0.8), M('fabric', 0xf07a2a, 0.8)];
+  const trimM = [M('fabric', 0xf1e6d2, 0.85), M('fabric', 0x3a3f46, 0.85), M('fabric', 0x3f8f8a, 0.85)];
+  const skin = [M('plaster', 0xe0a862, 0.8), M('plaster', 0xc98a5a, 0.8), M('plaster', 0xd9876d, 0.8)];
+  const hatM = [M('fabric', 0xd6402f, 0.8), M('fabric', 0xf1e6d2, 0.8), null, M('fabric', 0x3f8f8a, 0.8)];
+  const hashF = (i, j) => { const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return s - Math.floor(s); };
+  // a figure facing +z: seated (legs block forward from the seat) or standing (legs block under the torso),
+  // six sided torso with a shoulder cap, sphere head, a cap on most, one arm raised or hanging
+  const figure = (parent, i, x, y0, z, yaw, seated) => {
+    const f = new THREE.Group(); f.position.set(x, y0, z); f.rotation.y = yaw; parent.add(f);
+    const s = suit[i % 6], t = trimM[(i * 7) % 3], k = skin[(i * 5) % 3], h = hatM[(i * 3) % 4], raise = hashF(i, 3) < 0.45;
+    const sc = 0.92 + 0.16 * hashF(i, 5);
+    f.scale.setScalar(sc);
+    if (seated) bx(0.36, 0.20, 0.46, t, 0, 0.0, 0.16, f); else bx(0.34, 0.52, 0.22, t, 0, 0, 0, f);
+    const ty = seated ? 0.20 : 0.52;
+    add(new THREE.CylinderGeometry(0.24, 0.18, 0.50, 6, 1, true), s, 0, ty + 0.25, 0, f);
+    add(new THREE.CircleGeometry(0.24, 6), s, 0, ty + 0.50, 0, f).rotation.x = -PI / 2;
+    add(new THREE.SphereGeometry(0.15, 5, 3), k, 0, ty + 0.67, 0, f);
+    if (h) add(new THREE.ConeGeometry(0.17, 0.12, 6, 1, true), h, 0, ty + 0.79, 0, f);
+    const arm = add(new THREE.BoxGeometry(0.11, 0.40, 0.11), s, (i % 2 ? -0.27 : 0.27), ty + 0.48, 0, f);
+    arm.geometry.translate(0, 0.16, 0);
+    arm.rotation.z = (i % 2 ? -1 : 1) * (raise ? -0.35 : PI - 0.25);
+    return f;
+  };
+  let chairs = 0;
 
   // deck 8 x 6: dark base band, twenty boards running along z, a lighter lip all round
   bx(8, 0.06, 6, deckT.base, 0, 0, 0);
@@ -45,8 +72,8 @@ export default function (THREE) {
     for (const [lx, lz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) bx(0.045, 0.44, 0.045, teal.alt, lx, 0, lz, c);
     for (const lx of [-0.18, 0.18]) bx(0.045, 0.5, 0.045, teal.face, lx, 0.48, -0.19, c);
     bx(0.42, 0.07, 0.03, teal.edge, 0, 0.88, -0.19, c); bx(0.42, 0.06, 0.03, teal.face, 0, 0.7, -0.19, c);
-    // seated spectator card on the chair, facing the table
-    add(new THREE.PlaneGeometry(0.62, 1.05), crowd, 0, 0.525 + 0.02, -0.05, c);
+    // seated figure on the chair, facing the table (round 5: geometry, not a card)
+    figure(c, chairs++, 0, 0.48, -0.04, 0, true);
   };
   const tables = [[-2.6, 1.3], [2.4, 1.5], [-1.3, -1.3], [2.6, -1.2]];
   tables.forEach(([tx, tz], i) => {
@@ -83,6 +110,8 @@ export default function (THREE) {
   [[-0.75, 0.28, leafA], [-0.3, 0.3, leafB], [0.15, 0.27, leafC], [0.6, 0.3, leafA], [0.85, 0.22, leafB], [-0.5, 0.2, leafC]].forEach(([lx, r, mt]) => add(new THREE.SphereGeometry(r, 8, 6), mt, lx, 0.68 + r * 0.8, -2.65 + (lx > 0 ? 0.05 : -0.05)));
   [[-0.6, 0.1], [0.05, 0.09], [0.75, 0.1]].forEach(([lx, r]) => add(new THREE.SphereGeometry(r, 8, 6), flower, lx, 0.95, -2.5));
 
+  // six standing figures along the back edge either side of the planter, facing the road (+z), yawed a little
+  [[-3.3, -2.5], [-2.55, -2.2], [-1.75, -2.6], [1.7, -2.55], [2.5, -2.2], [3.3, -2.5]].forEach(([fx, fz], i) => figure(g, 8 + i, fx, 0.1, fz, 0.5 * (hashF(i, 77) - 0.5), false));
   // A frame chalkboard near the front
   const e = new THREE.Group(); e.position.set(0.3, 0.1, 1.9); e.rotation.y = -0.3; g.add(e);
   const f = new THREE.Group(); f.rotation.x = -0.18; e.add(f);

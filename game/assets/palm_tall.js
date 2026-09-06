@@ -15,12 +15,16 @@ export default function (THREE) {
   const put = (geo, mat, x, y, z, rx, ry, rz, parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); (parent || g).add(m); return m; };
   const hash = (i, j) => { const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return s - Math.floor(s); };
   // a frond card lying along +x from the crown (x = 0) to the tip (x = L), bent by rise and drop
+  // round 5: every frond is a V, two half planes folded 30 degrees down either side of the rachis (the
+  // picture's centre line), so a frond is never one flat quad seen edge on and the crown reads thick
+  // from every side; the fold is the picture's own rachis so the cutout maps across it unchanged
+  const FOLD = 0.52;
   const frondGeo = (L, W, rise, drop, segs, flip) => {
-    const geo = new THREE.PlaneGeometry(L, W, segs || 8, 1);
+    const geo = new THREE.PlaneGeometry(L, W, segs || 8, 2);
     const p = geo.attributes.position, uv = geo.attributes.uv;
     for (let i = 0; i < p.count; i++) {
       const t = (p.getX(i) + L / 2) / L, w = p.getY(i);
-      p.setXYZ(i, t * L, rise * t - drop * t * t, w);
+      p.setXYZ(i, t * L, rise * t - drop * t * t - Math.abs(w) * Math.sin(FOLD), w * Math.cos(FOLD));
       if (flip) uv.setX(i, 1 - uv.getX(i));
     }
     geo.computeVertexNormals();

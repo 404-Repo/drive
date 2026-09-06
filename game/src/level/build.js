@@ -22,10 +22,20 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r4-20260906171652';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r4-20260906171652';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r4-20260906171652';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r4-20260906171652';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r5-20260906181225';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r5-20260906181225';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements, nearest } from './placements.js?v=r5-20260906181225';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r5-20260906181225';
+import { stackCrowd, makeCrowdFront, FRONT_SPECS, seedOf } from './crowdrow.js?v=r5-20260906181225';
+
+// Round 5 (targeted, crowd depth): every spectator_group is re seated as three card layers 0.3 m back and up
+// (crowdrow.js stackCrowd, near instance and far copies alike), and a modelled front row of figures stands on the
+// ground in front of every crowd run, and in front of a grandstand or cafe terrace within FRONT_STAND_DIST of the
+// road (the quay grandstand stands behind the quay houses, 23 m from the road: no row there). The front rows ride
+// the far tier 1 copy (90 to 200 m) and are dropped past 200 m, where a 1.6 m figure is 6 px and the cards behind it
+// carry the crowd. Knobs: ?crowdstack=0 keeps the asset's flat layout, ?crowdfront=0 builds no figures (the A/Bs).
+const FRONT_STAND_DIST = 22;
+const FRONT_FAR_TIERS = 1;
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
@@ -243,8 +253,13 @@ export async function buildLevel(THREE_, opts) {
   // 1. the list
   let list = expandPlacements({ spline, road, terrain });
   const densityIndex = new Map();
+  const runKeep = new Map();   // round 5: a crowd RUN is kept or dropped whole (every second card of a run exposed every cut edge on the phone tier)
   list = list.filter((p) => {
     if (!DENSITY_ASSETS.has(p.asset)) return true;
+    if (p.asset === 'spectator_group' && p.run !== undefined) {
+      if (!runKeep.has(p.run)) { const i = densityIndex.get('crowd_run') || 0; densityIndex.set('crowd_run', i + 1); runKeep.set(p.run, densityKeep(i, density)); }
+      return runKeep.get(p.run);
+    }
     const i = densityIndex.get(p.asset) || 0; densityIndex.set(p.asset, i + 1);
     return densityKeep(i, density);
   });
@@ -350,6 +365,9 @@ export async function buildLevel(THREE_, opts) {
   const farOn = opts.farVariant !== undefined ? !!opts.farVariant : (farKnob ? farKnob[2] !== '0' : tierName !== 'phone');
   BlockLOD.force = farKnob ? +farKnob[2] : -1;   // far=0 builds none, far=N forces tier N
   const placed = [];   // { p, y, url, bakeKey } of every static placement, for the deferred far build
+  const fronts = [];   // { row, bakeKey } of every generated front row, cloned into the far tier 1 groups
+  const crowdStack = !/(^|[?&])crowdstack=0/.test(qs), crowdFront = !/(^|[?&])crowdfront=0/.test(qs);
+  let stacked = 0, frontRows = 0, frontFigures = 0;
   const place = (obj, p, y, materials = true) => {
     obj.position.set(p.x, y, p.z);
     obj.rotation.set(0, p.rot * DEG2RAD, 0);
@@ -388,6 +406,7 @@ export async function buildLevel(THREE_, opts) {
     if (typeof p.y === 'number') y = p.y;
     else y = heightAt(px, pz) + (p.lift || 0) + (p.dy || 0) - SINK;
     place(obj, p, y);
+    if (p.asset === 'spectator_group' && crowdStack && stackCrowd(T, obj, seedOf(p.x, p.z), p.end || 0)) stacked++;
     counts.set(p.asset, (counts.get(p.asset) || 0) + 1);
     assetNames.add(p.asset);
     addCollider(p, size, y);
@@ -427,8 +446,27 @@ export async function buildLevel(THREE_, opts) {
       fillet = makeFillet(p, [size[0], size[1]], spec, heightAt, paintAt(p.x, p.z));
       if (fillet) { applyMaterials(fillet, { asset: 'fillet' }); g.add(fillet); }
     }
+    // the modelled front row on the ground in front of a crowd, a near grandstand or a cafe terrace (crowdrow.js)
+    const fspec = crowdFront && typeof p.y !== 'number' ? frontSpecFor(p) : null;
+    if (fspec) {
+      const rr = p.rot * DEG2RAD, cr = Math.cos(rr), sr = Math.sin(rr);
+      const groundY = (lx, lz) => heightAt(p.x + lx * cr + lz * sr, p.z - lx * sr + lz * cr) - SINK - y;
+      // the figures take the heavy set the host asset itself draws in this cell (the c2 crowd's timber step: 'timber_painted'),
+      // so they merge into a bucket the block already has: 0 extra draws (measured at the hairpin exit: a bucket of their
+      // own cost 5 to 7 there), and a 30 m cell casts from every bucket, so they throw contact shadows
+      const row = makeCrowdFront(T, fspec, seedOf(p.x, p.z) ^ 0x5bd1e995, groundY, p.end || 0, heavySetOf(obj) || 'metal');
+      row.position.set(p.x, y, p.z);
+      row.rotation.set(0, rr, 0);
+      row.name = p.tag + '_front';
+      row.userData.asset = p.asset;
+      applyMaterials(row, { asset: 'crowd_front', local: false, unify: false });
+      g.add(row);
+      fronts.push({ row, bakeKey });
+      frontRows++; frontFigures += row.children.length;
+    }
     if (farOn) placed.push({ p, y, url, bakeKey });   // the far copies of this placement are built after level ready (step 9)
   }
+  if (stacked || frontRows) console.log(`[level] crowd depth: ${stacked} spectator groups layered (per layer size 0.9 to 1.1 and mirror; a flat three card asset is re seated 0.3 m back and up per layer), ${frontRows} modelled front rows with ${frontFigures} figures`);
 
   // 4. house front walls as continuous collision segments
   if (world && world.addWallSegment) {
@@ -589,10 +627,18 @@ export async function buildLevel(THREE_, opts) {
           const objF = fp.obj.clone(true);
           far.dropped[ti] += fp.dropped; if (ti === 0) far.total += fp.total;
           place(objF, e.p, e.y, false);
+          if (e.p.asset === 'spectator_group' && crowdStack) stackCrowd(T, objF, seedOf(e.p.x, e.p.z), e.p.end || 0);   // the same layers as the near instance
           farGroupFor(ti, e.bakeKey).add(objF);
           // no fillet in a far copy: a contact blend 6 cm high is a near detail by definition (the ground sets were
           // 75k triangles in the hairpin exit view, most of them past 90 m); the far prop still sits 4 cm into the ground
         }
+        work += now() - w0;
+        if ((++i) % 16 === 0) await slice();
+      }
+      // the front rows ride the first far tier(s) as clones (shared geometry and materials), then drop
+      for (const f of fronts) {
+        const w0 = now();
+        for (let ti = 0; ti < Math.min(FRONT_FAR_TIERS, FAR_TIERS.length); ti++) farGroupFor(ti, f.bakeKey).add(f.row.clone(true));
         work += now() - w0;
         if ((++i) % 16 === 0) await slice();
       }
@@ -639,6 +685,23 @@ export async function buildLevel(THREE_, opts) {
   }
 
   return { blocks, movers, colliders, assetNames, counts, itemBoxAnchors, padAnchors, visibleAssets, missing, placements: list, far };
+}
+
+/** the first heavy (30 m cell) set a placed instance draws, after its material pass: the crowd's figures join that bucket */
+function heavySetOf(obj) {
+  let found = null;
+  obj.traverse((o) => {
+    if (found || !o.isMesh || !o.material || Array.isArray(o.material)) return;
+    const u = o.material.userData || {};
+    if (u.triSet && !String(u.triSet).startsWith('card') && !u.triLocal && !LIGHT_SETS.has(u.triSet) && !(o.material.alphaTest > 0)) found = u.triSet;
+  });
+  return found;
+}
+/** the front row spec for a placement, or null: crowds unless the placement says front: false, stands and cafes near the road */
+function frontSpecFor(p) {
+  if (p.asset === 'spectator_group') return p.front === false ? null : FRONT_SPECS.spectator_group;
+  if (FRONT_SPECS[p.asset]) { const n = nearest(p.x, p.z); return n && n.dist < FRONT_STAND_DIST ? FRONT_SPECS[p.asset] : null; }
+  return null;
 }
 
 /**

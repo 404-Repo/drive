@@ -17,7 +17,7 @@
  * addCylinder; addWallSegment takes the two base points and the height.
  */
 import * as THREE from 'three';
-import { yAt } from './road.js?v=r4-20260906171652';
+import { yAt } from './road.js?v=r5-20260906181225';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const KART_BAND = { lo: 0.12, hi: 1.0 };   // colliders whose top is under lo above the kart's y are driven over

@@ -48,7 +48,7 @@
  *     so a photograph tool can capture the held horizon.
  */
 import * as THREE from 'three';
-import { KART } from './physics.js?v=r4-20260906171652';
+import { KART } from './physics.js?v=r5-20260906181225';
 
 // Round 3 (the blind critic: the round 2 camera overshot, the kart box at 0.50 of the frame height against a
 // 0.35 to 0.45 target, an AI kart ahead filling a third of the frame): a little higher and further back,

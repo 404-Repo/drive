@@ -1,8 +1,11 @@
-// grandstand_small candidate 1 (pass 2: open ended tubes and fewer curve segments to sit inside the band): profile sweeps. The three tier seating block is ONE stepped
-// section in (z, y) extruded 11 m along x, the right hand stair is a finer stepped section
-// extruded 1 m, the benches are extruded plank sections, the sagging canopy is the same
-// section extruded twenty times as alternating stripes, the valance is a scalloped Shape.
-// Round scaffold tubes with X bracing under it, seated crowd cards on every tier.
+// grandstand_small c2 (fix round 5, Ben's crowd depth round): the FRONT tier is a modelled crowd, 13 chunky
+// seated figures (legs block, six sided torso, sphere head, caps, raised arms, six suit colours from the style
+// lock, about 60 tris each) on the front bench, so the near row is geometry; tiers two and three carry crowd
+// cards in TWO depth layers each (the seated picture at the bench and a standing picture 0.5 m back, raised,
+// darker through a vertex colour, wider), every layer cut into slices at the head gaps of its own picture at
+// their own heights and yaws so the top edge is heads and flags at three depths and never one straight line.
+// Scaffold post tubes are open ended (their ends sit on the ground and under the deck) to pay for the figures.
+// Below is c1 as shipped: profile sweeps, one stepped section extruded 11 m, stair, benches, sagging canopy.
 export default function (THREE) {
   const g = new THREE.Group();
   const PI = Math.PI, DS = THREE.DoubleSide;
@@ -21,15 +24,57 @@ export default function (THREE) {
 
   const metal = fam('metal', 0x3a3f46, 0.45, 0.2);
   const tube = M('metal', shade(0x3a3f46, -0.04), 0.45, 0.2, { side: DS });
+  const tubeBase = M('metal', shade(0x3a3f46, -0.18, 1, 0.12), 0.45, 0.2, { side: DS });
   const deck = fam('timber', 0xcdb897, 0.7, 0);
   const bench = fam('timber', 0xc4683f, 0.7, 0);
   const plaster = fam('plaster', 0xf1e6d2, 0.75, 0);
   const coral = fam('plaster', 0xed5851, 0.7, 0);
   const canvasW = fam('fabric', 0xf1e6d2, 0.8, 0, { side: DS });
   const canvasR = fam('fabric', 0xd6402f, 0.8, 0, { side: DS });
-  const crowdA = M('card:crowd_a', 0xc98a5a, 0.8, 0, { side: DS });
-  const crowdB = M('card:crowd_b', 0xb0786a, 0.8, 0, { side: DS });
+  const crowdA = M('card:crowd_a', 0xc98a5a, 0.8, 0, { side: DS, vertexColors: true });
+  const crowdB = M('card:crowd_b', 0xb0786a, 0.8, 0, { side: DS, vertexColors: true });
+  const crowdC = M('card:crowd_c', 0x9a8fb0, 0.8, 0, { side: DS, vertexColors: true });
+  // the crowd pictures: aspect (height over width) and the u of the head gaps, measured on the shipped atlas cutouts
+  const PIC = { crowd_a: { aspect: 0.557, cuts: [0.303, 0.454, 0.728, 0.891] }, crowd_b: { aspect: 0.497, cuts: [0.121, 0.362, 0.602, 0.723] }, crowd_c: { aspect: 0.734, cuts: [0.164, 0.355, 0.570, 0.793] } };
+  const hashC = (i, j) => { const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return s - Math.floor(s); };
+  // a crowd layer: the whole picture W wide in slices at the head gaps, each at its own height, depth and yaw, darkened by `dark`
+  const crowdLayer = (mat, picName, W, x, y0, z, dark, seed) => {
+    const pic = PIC[picName], us = [0, ...pic.cuts, 1], H = W * pic.aspect;
+    for (let i = 0; i + 1 < us.length; i++) {
+      const u0 = us[i], u1 = us[i + 1];
+      const geo = new THREE.PlaneGeometry(W * (u1 - u0), H);
+      const uv = geo.attributes.uv;
+      for (let j = 0; j < uv.count; j++) uv.setX(j, u0 + uv.getX(j) * (u1 - u0));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(uv.count * 3).fill(dark * (0.93 + 0.07 * hashC(i, seed + 9))), 3));
+      const m = add(geo, mat, x + (u0 + u1 - 1) * 0.5 * W, y0 + H / 2 + 0.02 + 0.08 * hashC(i, seed), z + 0.05 * (hashC(i, seed + 3) - 0.5));
+      m.rotation.y = 0.10 * (hashC(i, seed + 5) - 0.5);
+    }
+  };
 
+  // ---- modelled crowd figures (round 5: the front row is geometry, chunky toy proportions, under 70 tris each) ----
+  const suit = [M('fabric', 0xed5851, 0.8), M('fabric', 0x2f5fc4, 0.8), M('fabric', 0xf2c230, 0.8), M('fabric', 0x3fc7a0, 0.8), M('fabric', 0x7a4fc9, 0.8), M('fabric', 0xf07a2a, 0.8)];
+  const trimM = [M('fabric', 0xf1e6d2, 0.85), M('fabric', 0x3a3f46, 0.85), M('fabric', 0x3f8f8a, 0.85)];
+  const skin = [M('plaster', 0xe0a862, 0.8), M('plaster', 0xc98a5a, 0.8), M('plaster', 0xd9876d, 0.8)];
+  const hatM = [M('fabric', 0xd6402f, 0.8), M('fabric', 0xf1e6d2, 0.8), null, M('fabric', 0x3f8f8a, 0.8)];
+  const hashF = (i, j) => { const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return s - Math.floor(s); };
+  // a figure facing +z: seated (legs block forward from the seat) or standing (legs block under the torso),
+  // six sided torso with a shoulder cap, sphere head, a cap on most, one arm raised or hanging
+  const figure = (parent, i, x, y0, z, yaw, seated) => {
+    const f = new THREE.Group(); f.position.set(x, y0, z); f.rotation.y = yaw; parent.add(f);
+    const s = suit[i % 6], t = trimM[(i * 7) % 3], k = skin[(i * 5) % 3], h = hatM[(i * 3) % 4], raise = hashF(i, 3) < 0.45;
+    const sc = 0.92 + 0.16 * hashF(i, 5);
+    f.scale.setScalar(sc);
+    if (seated) bx(0.36, 0.20, 0.46, t, 0, 0.0, 0.16, f); else bx(0.34, 0.52, 0.22, t, 0, 0, 0, f);
+    const ty = seated ? 0.20 : 0.52;
+    add(new THREE.CylinderGeometry(0.24, 0.18, 0.50, 6, 1, true), s, 0, ty + 0.25, 0, f);
+    add(new THREE.CircleGeometry(0.24, 6), s, 0, ty + 0.50, 0, f).rotation.x = -PI / 2;
+    add(new THREE.SphereGeometry(0.15, 5, 3), k, 0, ty + 0.67, 0, f);
+    if (h) add(new THREE.ConeGeometry(0.17, 0.12, 6, 1, true), h, 0, ty + 0.79, 0, f);
+    const arm = add(new THREE.BoxGeometry(0.11, 0.40, 0.11), s, (i % 2 ? -0.27 : 0.27), ty + 0.48, 0, f);
+    arm.geometry.translate(0, 0.16, 0);
+    arm.rotation.z = (i % 2 ? -1 : 1) * (raise ? -0.35 : PI - 0.25);
+    return f;
+  };
   // tiers: tread from z0 (front) to z1 (back) at height y. Block spans x -6..5, stair 5..6
   const tiers = [{ z0: 2.9, z1: 1.4, y: 1.0 }, { z0: 1.4, z1: -0.1, y: 1.9 }, { z0: -0.1, z1: -1.6, y: 2.8 }];
   const XL = -6.0, XR = 5.0, XC = (XL + XR) / 2, XW = XR - XL;
@@ -46,8 +91,17 @@ export default function (THREE) {
     bx(XW - 0.3, 0.012, 0.40, bench.top, XC, yb + 0.08, zb);
     bx(XW - 0.3, 0.04, 0.05, bench.edge, XC, yb + 0.045, zb + 0.215);
     for (let k = 0; k < 5; k++) bx(0.12, 0.42, 0.34, bench.alt, XL + 0.6 + k * (XW - 1.2) / 4, t.y, zb);
-    // seated spectators: four cards behind the bench, two card materials alternate
-    for (let k = 0; k < 4; k++) add(new THREE.PlaneGeometry(2.55, 1.35), ((k + i) % 2) ? crowdB : crowdA, XL + 0.15 + 1.3 + 2.6 * k, t.y + 0.1 + 0.675, zb - 0.12);
+    // crowd: the front tier is 14 modelled seated figures on the bench; the upper tiers carry cards in two depth
+    // layers (the seated picture at the bench, a standing picture 0.5 m back and raised on the tread behind it)
+    if (i === 0) {
+      for (let k = 0; k < 13; k++) figure(g, k, XL + 0.55 + k * (XW - 1.1) / 12, yb + 0.08, zb - 0.06, 0.16 * (hashC(k, 41) - 0.5), true);
+    } else {
+      crowdLayer(i === 1 ? crowdB : crowdA, i === 1 ? 'crowd_b' : 'crowd_a', 2.7, XL + 0.15 + 1.3 + 2.6 * 0.0, t.y + 0.12, zb - 0.12, 1.0, 50 + i);
+      crowdLayer(i === 1 ? crowdB : crowdA, i === 1 ? 'crowd_b' : 'crowd_a', 2.7, XL + 0.15 + 1.3 + 2.6 * 1.0, t.y + 0.12, zb - 0.12, 1.0, 60 + i);
+      crowdLayer(i === 1 ? crowdB : crowdA, i === 1 ? 'crowd_b' : 'crowd_a', 2.7, XL + 0.15 + 1.3 + 2.6 * 2.0, t.y + 0.12, zb - 0.12, 1.0, 70 + i);
+      crowdLayer(i === 1 ? crowdB : crowdA, i === 1 ? 'crowd_b' : 'crowd_a', 2.7, XL + 0.15 + 1.3 + 2.6 * 3.0, t.y + 0.12, zb - 0.12, 1.0, 80 + i);
+      for (let k = 0; k < 4; k++) crowdLayer(i === 1 ? crowdC : crowdB, i === 1 ? 'crowd_c' : 'crowd_b', 2.9, XL + 0.15 + 1.3 + 2.6 * k + 0.35, t.y + 0.30, zb - 0.62, 0.78, 90 + 4 * i + k);
+    }
   });
 
   // right hand stair: fourteen steps from the ground to the top tier, one solid section
@@ -72,7 +126,7 @@ export default function (THREE) {
   const R = 0.045, xs = [-5.9, -3.2, -0.5, 2.2, 4.9];
   const rows = [{ z: 2.8, top: 0.88 }, { z: 1.32, top: 1.78 }, { z: -0.16, top: 2.68 }, { z: -1.55, top: 2.68 }];
   for (const r of rows) {
-    for (const x of xs) { cyl(R, R, 0.25, 10, metal.base, x, 0, r.z); cyl(R, R, r.top - 0.25, 10, metal.face, x, 0.25, r.z); }
+    for (const x of xs) { add(new THREE.CylinderGeometry(R, R, 0.25, 10, 1, true), tubeBase, x, 0.125, r.z); add(new THREE.CylinderGeometry(R, R, r.top - 0.25, 10, 1, true), tube, x, 0.25 + (r.top - 0.25) / 2, r.z); }
     bar(V(-5.9, r.top - 0.12, r.z), V(4.9, r.top - 0.12, r.z), R * 0.8, tube, 10, null, true);
     bar(V(-5.9, 0.35, r.z), V(4.9, 0.35, r.z), R * 0.8, tube, 10, null, true);
   }

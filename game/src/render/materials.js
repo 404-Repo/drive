@@ -56,10 +56,10 @@
  *   applyTerrainMaterial(terrain.tiles, terrain)   after buildTerrain
  */
 import * as THREE from 'three';
-import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r4-20260906171652';
-import { classify, RECIPES } from '../../surfaces.js?v=r4-20260906171652';
-import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r4-20260906171652';
-import { getTier } from './quality.js?v=r4-20260906171652';
+import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r5-20260906181225';
+import { classify, RECIPES } from '../../surfaces.js?v=r5-20260906181225';
+import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r5-20260906181225';
+import { getTier } from './quality.js?v=r5-20260906181225';
 
 /**
  * The sets. `scale` is metres per tile. `normal` is the normal map strength, `albedo` and `rough`
@@ -519,7 +519,29 @@ Object.defineProperty(TriplanarMaterial.prototype, 'isTriplanar', { value: true 
 // ------------------------------------------------------------------------------------------ cards
 const CARD_PARS_FS = /* glsl */`
 uniform vec3 uCardSunW;      // direction toward the sun, world
-uniform vec3 uCardSun;       // sun colour x intensity / pi`;
+uniform vec3 uCardSun;       // sun colour x intensity / pi
+uniform vec2 uCardTexels;    // atlas size in texels (the feather below is measured in texels)`;
+// round 5 (fix5_render item 1): the cut is a feather, not a 1 px step. three's own ALPHA_TO_COVERAGE
+// path smoothsteps over exactly fwidth(a), one screen pixel, so a magnified card (a crowd row 3 m
+// from the camera is 1.2 texels a pixel) still shows the cutout's own texel staircase as a hard
+// paper edge. The band here is the wider of 2 screen pixels and 2 atlas texels, capped at 3 pixels,
+// centred on the 0.5 cut so the silhouette stays where it was; the fractional alpha becomes sample
+// coverage on both tiers (the composer's 4x MSAA target on high, the antialiased default framebuffer
+// on phone, where the renderer is created with antialias: true). ?cardfeather=0 restores three's cut.
+const CARD_ALPHATEST_FS = /* glsl */`
+#ifdef USE_ALPHATEST
+  {
+    float aw = max( fwidth( diffuseColor.a ), 1e-5 );
+    float tp = 1.0;                                             // atlas texels per screen pixel
+    #ifdef USE_MAP
+      vec2 tpp = fwidth( vMapUv ) * uCardTexels;
+      tp = max( max( tpp.x, tpp.y ), 1e-3 );
+    #endif
+    float band = aw * clamp( 2.0 / tp, 2.0, 3.0 ) * uCardFeather;   // in alpha units
+    diffuseColor.a = smoothstep( alphaTest - 0.5 * band, alphaTest + 0.5 * band, diffuseColor.a );
+    if ( diffuseColor.a == 0.0 ) discard;
+  }
+#endif`;
 // the per card tint (mix(1, colour / mean, tint)) is baked into the colour attribute by applyMaterials
 // and three's own color_fragment multiplies it in; the backlight amount rides in aRM.y (a card is
 // never metallic, so the metalness slot is free) and metalness is forced to 0 here
@@ -541,6 +563,7 @@ const CARD_EMISSIVE_FS = /* glsl */`
 }`;
 
 let SUN_W = sunDirection(THREE).clone().normalize(), SUN_RGB = new THREE.Color(SUN_COLOR).multiplyScalar(SUN_INTENSITY / Math.PI);
+const CARD_FEATHER = knob('cardfeather') !== null ? +knob('cardfeather') : 1;   // 0 = three's one pixel cut (round 4 look)
 export function setCardSun(dirToSun, color, intensity) {
   SUN_W = dirToSun.clone().normalize();
   SUN_RGB = new THREE.Color(color).multiplyScalar(intensity / Math.PI);
@@ -569,8 +592,11 @@ export class CardMaterial extends VertexPBRMaterial {
     VertexPBRMaterial.prototype.onBeforeCompile.call(this, shader);
     shader.uniforms.uCardSunW = { value: SUN_W };
     shader.uniforms.uCardSun = { value: SUN_RGB };
+    shader.uniforms.uCardTexels = { value: new THREE.Vector2(CARD_ATLAS.width, CARD_ATLAS.height) };
+    shader.uniforms.uCardFeather = { value: CARD_FEATHER };
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>' + CARD_PARS_FS)
+      .replace('#include <common>', '#include <common>' + CARD_PARS_FS + '\nuniform float uCardFeather;')
+      .replace('#include <alphatest_fragment>', CARD_ALPHATEST_FS)
       .replace('float metalnessFactor = vRM.y;', CARD_METAL_FS)
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>' + CARD_NORMAL_FS)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + CARD_EMISSIVE_FS);
@@ -669,6 +695,92 @@ function flattenGeometry(o) {
 }
 
 /**
+ * Round 5 (fix5_render item 1): DEPTH TINT PER CARD LAYER. A crowd is three rows of cutouts 14 cm
+ * apart and a bougainvillea two cascades 18 cm apart; lit by one sun through one normal they came out
+ * the same value and overlapped into one flat picture. Within one asset the card planes are ranked by
+ * the depth of their centroid along the asset's own +z (the asset contract: the front faces +z), and
+ * the back layers are darkened and cooled in proportion, up to 13 / 11 / 6 percent on linear r / g / b
+ * (about 11 percent of luma, a touch bluer) at the back. The factor goes into a colour attribute that
+ * bake.js multiplies with the card's tint in phase 2, so it rides in the vertices of the ONE card
+ * material: no new bucket, no draw. Only stacks of PARALLEL cards facing z qualify (every card's mean
+ * normal within about 45 degrees of z and the stack at least 5 cm deep): a palm crown's fan of fronds,
+ * a pine's flat boughs, a bunting run and a single flag are left alone. Geometry is shared between the
+ * instances of an asset, so the attribute is written once per geometry. An asset that already carries
+ * a colour attribute on its cards has authored its own layer values and is left alone. ?carddepth=0
+ * turns it off, ?carddepth=2 doubles it for a look A/B.
+ */
+const CARD_DEPTH_DARK = [0.13, 0.11, 0.06];   // linear rgb darkening at the back layer (d = 1)
+const CARD_DEPTH_MIN_RANGE = 0.05, CARD_DEPTH_PARALLEL = 0.7;
+const CARD_DEPTH_K = knob('carddepth') !== null ? +knob('carddepth') : 1;
+const DEPTH_TINTED = new WeakMap();   // geometry -> the depth factor it carries
+const _cdRel = new THREE.Matrix4(), _cdInv = new THREE.Matrix4(), _cdNm = new THREE.Matrix3(), _cdV = new THREE.Vector3();
+function tintCardDepth(root, cards) {
+  if (cards.length < 2 || !(CARD_DEPTH_K > 0)) return;
+  // an asset that ships its own colour attribute on a card (spectator_group c2 writes 1.0 / 0.84 / 0.70
+  // per layer) has authored its layer values: leave it alone so the two never stack
+  if (cards.some(([o]) => o.geometry.attributes.color && !DEPTH_TINTED.has(o.geometry))) return;
+  root.updateMatrixWorld(true);
+  _cdInv.copy(root.matrixWorld).invert();
+  const rows = [];
+  for (const [o] of cards) {
+    const g = o.geometry, p = g.attributes.position, nrm = g.attributes.normal;
+    if (!p || !p.count) continue;
+    _cdRel.multiplyMatrices(_cdInv, o.matrixWorld);
+    _cdNm.getNormalMatrix(_cdRel);
+    let z = 0, nz = 0;
+    for (let i = 0; i < p.count; i++) {
+      z += _cdV.fromBufferAttribute(p, i).applyMatrix4(_cdRel).z;
+      if (nrm) nz += Math.abs(_cdV.fromBufferAttribute(nrm, i).applyMatrix3(_cdNm).normalize().z);
+    }
+    rows.push({ o, z: z / p.count, nz: nrm ? nz / p.count : 1 });
+  }
+  if (rows.length < 2 || rows.some((r) => r.nz < CARD_DEPTH_PARALLEL)) return;
+  let zmin = Infinity, zmax = -Infinity;
+  for (const r of rows) { zmin = Math.min(zmin, r.z); zmax = Math.max(zmax, r.z); }
+  if (zmax - zmin < CARD_DEPTH_MIN_RANGE) return;
+  for (const r of rows) {
+    const d = Math.min(1, ((zmax - r.z) / (zmax - zmin)) * CARD_DEPTH_K);
+    if (d < 0.01) continue;
+    const g = r.o.geometry;
+    if (DEPTH_TINTED.has(g)) { r.o.material.vertexColors = true; continue; }
+    const n = g.attributes.position.count;
+    const f = [1 - CARD_DEPTH_DARK[0] * d, 1 - CARD_DEPTH_DARK[1] * d, 1 - CARD_DEPTH_DARK[2] * d];
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = f[0]; col[i * 3 + 1] = f[1]; col[i * 3 + 2] = f[2]; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    DEPTH_TINTED.set(g, d);
+    r.o.material.vertexColors = true;   // bake.js multiplies an existing colour attribute in only when the material says so
+  }
+}
+
+/** The linear rgb multiplier the depth tint uses at depth d (0 front .. 1 back). */
+export function cardDepthFactor(d) {
+  d = Math.max(0, Math.min(1, d));
+  return [1 - CARD_DEPTH_DARK[0] * d, 1 - CARD_DEPTH_DARK[1] * d, 1 - CARD_DEPTH_DARK[2] * d];
+}
+/**
+ * Re-tint ONE placed card mesh to depth d after the level has re-seated it (level/crowdrow.js rotates
+ * which cutout takes the front slot per instance, so an asset-time order is wrong for two instances in
+ * three). Works after applyMaterials (the colour attribute holds tint x depth): the factor written at
+ * asset time is divided out and the new one multiplied in, on the mesh's OWN copy of the geometry (the
+ * asset's geometry is shared between instances, so the first call clones it, 4 to 60 vertices a card).
+ * Returns false when the mesh carries no colour attribute yet (call it after applyMaterials).
+ */
+export function applyCardDepth(mesh, d) {
+  const src = mesh.geometry;
+  if (!src || !src.attributes.color) return false;
+  const prev = DEPTH_TINTED.get(src) || 0;
+  let g = src;
+  if (mesh.userData.__cardDepthOwn !== src) { g = src.clone(); mesh.geometry = g; mesh.userData.__cardDepthOwn = g; }
+  const fp = cardDepthFactor(prev), fn = cardDepthFactor(Math.min(1, d * CARD_DEPTH_K));
+  const col = g.attributes.color;
+  for (let i = 0; i < col.count; i++) col.setXYZ(i, col.getX(i) / fp[0] * fn[0], col.getY(i) / fp[1] * fn[1], col.getZ(i) / fp[2] * fn[2]);
+  col.needsUpdate = true;
+  DEPTH_TINTED.set(g, Math.min(1, d * CARD_DEPTH_K));
+  return true;
+}
+
+/**
  * Texture one loaded asset, in place of a vertexiseMaterials() call:
  *   applyMaterials(obj, { asset: 'house_narrow_tall' })          static, world projection
  *   applyMaterials(obj, { asset: 'kart_chassis', local: true })  moving, local projection
@@ -762,6 +874,7 @@ export function applyMaterials(root, opts = {}) {
     stats.tagged++;
     stats.sets.add(CARD_PREFIX + card);
   }
+  tintCardDepth(root, cards);
 
   // phase 2: colour, roughness and metalness into the vertices, one VertexPBR per surface (bake.js)
   vertexiseMaterials(root, { unify });
