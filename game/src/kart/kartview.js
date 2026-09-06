@@ -35,8 +35,8 @@
  * one scene: two Points objects and one InstancedMesh of cones, three draws for the field.
  */
 import * as THREE from 'three';
-import { ASSET, bakeStatic } from '../../assetlib.js?v=r0-20260906041519';
-import { KART } from './physics.js?v=r0-20260906041519';
+import { ASSET, bakeStatic } from '../../assetlib.js?v=r0-20260906043348';
+import { KART } from './physics.js?v=r0-20260906043348';
 
 const SPARK_COLOURS = [0x8fa9d6, 0x8fa9d6, 0xf07a2a, 0x7a4fc9];   // index by tier (0 unused)
 const FLARE_COLOUR = 0xffc48a;
@@ -53,7 +53,7 @@ function loadApplyMaterials() {
   if (_materialsPromise) return _materialsPromise;
   _materialsPromise = (async () => {
     try {
-      const m = await import('../render/materials.js?v=r0-20260906041519');
+      const m = await import('../render/materials.js?v=r0-20260906043348');
       const fn = typeof m.applyMaterials === 'function' ? m.applyMaterials : null;
       if (!fn) console.warn('[kartview] render/materials.js has no applyMaterials export; karts keep flat colours');
       return fn;

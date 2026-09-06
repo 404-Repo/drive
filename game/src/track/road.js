@@ -28,7 +28,7 @@
  * Tiles: receiveShadow true, userData { kind: 'road', block, sMin, sMax, surfaces }.
  */
 import * as THREE from 'three';
-import { Spline, START_PROGRESS } from './spline.js?v=r0-20260906041519';
+import { Spline, START_PROGRESS } from './spline.js?v=r0-20260906043348';
 
 export const ROAD = {
   KERB_W: 0.6, KERB_H: 0.24,          // substrate; the kerb_module asset (0.30 tall) sits on the road at the kerb base

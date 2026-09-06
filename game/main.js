@@ -31,34 +31,34 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r0-20260906041519';
-import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r0-20260906041519';
-import { createSky } from './src/render/sky.js?v=r0-20260906041519';
-import { createLightingRig } from './src/render/lighting.js?v=r0-20260906041519';
-import { createPost } from './src/render/post.js?v=r0-20260906041519';
-import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r0-20260906041519';
-import { buildRoad } from './src/track/road.js?v=r0-20260906041519';
-import { buildTerrain } from './src/track/terrain.js?v=r0-20260906041519';
-import { buildSea } from './src/track/sea.js?v=r0-20260906041519';
-import { World } from './src/track/collision.js?v=r0-20260906041519';
-import { buildLevel } from './src/level/build.js?v=r0-20260906041519';
-import { GRID, PLACEMENTS } from './src/level/placements.js?v=r0-20260906041519';
-import { KartBody, resolveBumps } from './src/kart/physics.js?v=r0-20260906041519';
-import { Player } from './src/kart/player.js?v=r0-20260906041519';
-import { KartView } from './src/kart/kartview.js?v=r0-20260906041519';
-import { ChaseCamera } from './src/kart/camera.js?v=r0-20260906041519';
-import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r0-20260906041519';
-import { Director } from './src/ai/director.js?v=r0-20260906041519';
-import { ItemSystem } from './src/items/items.js?v=r0-20260906041519';
-import { Screens } from './src/ui/screens.js?v=r0-20260906041519';
-import { HUD } from './src/ui/hud.js?v=r0-20260906041519';
-import { Minimap } from './src/ui/minimap.js?v=r0-20260906041519';
-import { Input } from './src/ui/input.js?v=r0-20260906041519';
-import { TouchControls } from './src/ui/touch.js?v=r0-20260906041519';
-import { Audio } from './src/audio/audio.js?v=r0-20260906041519';
-import { Events } from './src/game/events.js?v=r0-20260906041519';
-import { Race } from './src/game/race.js?v=r0-20260906041519';
-import { createTelemetry } from './src/game/telemetry.js?v=r0-20260906041519';
+import { detectTier, getTier, applyTierToRenderer } from './src/render/quality.js?v=r0-20260906043348';
+import { preloadMaterials, applyRoadMaterial, applyTerrainMaterial } from './src/render/materials.js?v=r0-20260906043348';
+import { createSky } from './src/render/sky.js?v=r0-20260906043348';
+import { createLightingRig } from './src/render/lighting.js?v=r0-20260906043348';
+import { createPost } from './src/render/post.js?v=r0-20260906043348';
+import { SPLINE, START_PROGRESS, CHECKPOINTS, LAP_LENGTH } from './src/track/spline.js?v=r0-20260906043348';
+import { buildRoad } from './src/track/road.js?v=r0-20260906043348';
+import { buildTerrain } from './src/track/terrain.js?v=r0-20260906043348';
+import { buildSea } from './src/track/sea.js?v=r0-20260906043348';
+import { World } from './src/track/collision.js?v=r0-20260906043348';
+import { buildLevel } from './src/level/build.js?v=r0-20260906043348';
+import { GRID, PLACEMENTS } from './src/level/placements.js?v=r0-20260906043348';
+import { KartBody, resolveBumps } from './src/kart/physics.js?v=r0-20260906043348';
+import { Player } from './src/kart/player.js?v=r0-20260906043348';
+import { KartView } from './src/kart/kartview.js?v=r0-20260906043348';
+import { ChaseCamera } from './src/kart/camera.js?v=r0-20260906043348';
+import { AIRacer, PERSONALITIES } from './src/ai/racer.js?v=r0-20260906043348';
+import { Director } from './src/ai/director.js?v=r0-20260906043348';
+import { ItemSystem } from './src/items/items.js?v=r0-20260906043348';
+import { Screens } from './src/ui/screens.js?v=r0-20260906043348';
+import { HUD } from './src/ui/hud.js?v=r0-20260906043348';
+import { Minimap } from './src/ui/minimap.js?v=r0-20260906043348';
+import { Input } from './src/ui/input.js?v=r0-20260906043348';
+import { TouchControls } from './src/ui/touch.js?v=r0-20260906043348';
+import { Audio } from './src/audio/audio.js?v=r0-20260906043348';
+import { Events } from './src/game/events.js?v=r0-20260906043348';
+import { Race } from './src/game/race.js?v=r0-20260906043348';
+import { createTelemetry } from './src/game/telemetry.js?v=r0-20260906043348';
 
 const Q = new URLSearchParams(location.search);
 const STAMP = window.__BUILD_STAMP__ || null;
@@ -341,12 +341,20 @@ async function boot() {
     player, input, touch, director, ais, hud, screens,
   };
   function dropNow() {
-    // over the edge of the cliff road (section H, the sea is to the left of travel): gravity and the fall rule do the rest
-    const q = spline.point(0.80, -14, new THREE.Vector3());
-    const t = spline.tangent(0.80, new THREE.Vector3());
-    playerBody.place(q.x, q.y + 0.6, q.z, Math.atan2(t.x, t.z));
+    // over the cliff edge at the second guard wall gap (section H, progress 0.838): the kart is placed 3 m
+    // seaward of the nearest cliff top point, in the air, moving seaward; gravity and the fall rule do the rest.
+    // (The first version used lateral -14 at progress 0.80, which is cliff top grass, and never fell.)
+    const P = 0.838;
+    const q = spline.point(P, 0, new THREE.Vector3());
+    const t = spline.tangent(P, new THREE.Vector3());
+    let e = null, best = Infinity;
+    for (const c of terrain.cliffEdge || []) { const d = (c.x - q.x) * (c.x - q.x) + (c.z - q.z) * (c.z - q.z); if (d < best) { best = d; e = c; } }
+    let x, y, z, vx, vz;
+    if (e) { x = e.x + e.nx * 3; z = e.z + e.nz * 3; y = e.y + 0.5; vx = e.nx * 6; vz = e.nz * 6; }
+    else { const p = spline.point(P, -22, new THREE.Vector3()); x = p.x; z = p.z; y = q.y + 0.5; vx = -t.z * 6; vz = t.x * 6; }
+    playerBody.place(x, y, z, Math.atan2(t.x, t.z));
     playerBody.state = 'race';
-    playerBody.vel.set(-t.z * 6, 0, t.x * 6);   // a nudge further seaward
+    playerBody.vel.set(vx, 0, vz);
     chase.snapTo(playerBody);
   }
 

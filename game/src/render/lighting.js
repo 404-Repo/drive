@@ -35,7 +35,7 @@
  *   rig.patchFog(mat);    the sea and any custom ShaderMaterial that carries three's fog chunks
  */
 import { CSM } from 'three/addons/csm/CSM.js';
-import { getTier } from './quality.js?v=r0-20260906041519';
+import { getTier } from './quality.js?v=r0-20260906043348';
 
 /** Sun placement, TRACK-PLAN section 1 and 9. */
 export const SUN_AZIMUTH_DEG = 250;

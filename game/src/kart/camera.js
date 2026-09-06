@@ -19,7 +19,7 @@
  * shake on a spin out. Nothing here touches the body.
  */
 import * as THREE from 'three';
-import { KART } from './physics.js?v=r0-20260906041519';
+import { KART } from './physics.js?v=r0-20260906043348';
 
 export const CAMERA = {
   distance: 6.8, distanceFast: 7.6, height: 2.4, lookAhead: 5.0, lookHeight: 1.0,

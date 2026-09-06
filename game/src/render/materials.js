@@ -51,10 +51,10 @@
  *   applyTerrainMaterial(terrain.tiles, terrain)   after buildTerrain
  */
 import * as THREE from 'three';
-import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r0-20260906041519';
-import { classify, RECIPES } from '../../surfaces.js?v=r0-20260906041519';
-import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r0-20260906041519';
-import { getTier } from './quality.js?v=r0-20260906041519';
+import { VertexPBRMaterial, vertexiseMaterials } from './bake.js?v=r0-20260906043348';
+import { classify, RECIPES } from '../../surfaces.js?v=r0-20260906043348';
+import { sunDirection, SUN_COLOR, SUN_INTENSITY } from './lighting.js?v=r0-20260906043348';
+import { getTier } from './quality.js?v=r0-20260906043348';
 
 /**
  * The sets. `scale` is metres per tile. `normal` is the normal map strength, `albedo` and `rough`

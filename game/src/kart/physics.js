@@ -314,7 +314,19 @@ export class KartBody {
     // --- fall detection
     const water = this.surface === 'water';
     const fallRule = this.world && typeof this.world.isFall === 'function' ? this.world.isFall(this.pos) : (this.pos.y < -1.0);
-    if (water || this.pos.y < -1.0 || fallRule) {
+    // a face steeper than about 53 degrees (the cliff face below the guard wall gaps) is not ground a kart
+    // can hold: it slides down it and the fall clock runs (integrator, round 0: the ?drop=1 check landed on
+    // the 65 degree face and drove back up to the road at 9 m/s)
+    const steep = this.grounded && this.groundNormal && this.groundNormal.y < 0.6 && !this.onRoad;
+    if (steep) { this.vel.x += this.groundNormal.x * 14 * dt; this.vel.z += this.groundNormal.z * 14 * dt; }
+    // wedged: throttle held, not moving, for 5 s while racing (a kart pinned between two colliders off the
+    // road has no other way back; the ?drop=1 style respawn puts it on the centreline). Integrator, round 0:
+    // the forced finish run sat 100 s against the inner cliff modules of section H.
+    if (this.state === 'race' && Math.abs(throttle) > 0.5 && Math.abs(this.speed) < 0.6 && this.grounded) {
+      this._stuckT = (this._stuckT || 0) + dt;
+      if (this._stuckT > 5) { this._stuckT = 0; this.startRespawn(); return; }
+    } else this._stuckT = 0;
+    if (water || this.pos.y < -1.0 || fallRule || steep) {
       this._fallTime += dt;
       if (water || this.pos.y < -1.0 || this._fallTime > 0.5) this.startRespawn();
     } else this._fallTime = 0;

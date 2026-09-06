@@ -22,10 +22,10 @@
  * against the 40 the lead allowed. Nothing here is baked and nothing uses .clone(true) of a merged asset.
  */
 import * as THREE from 'three';
-import { preloadAssets } from '../../assetlib.js?v=r0-20260906041519';
-import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r0-20260906041519';
-import { Projectiles } from './projectiles.js?v=r0-20260906041519';
-import { Hazards } from './hazards.js?v=r0-20260906041519';
+import { preloadAssets } from '../../assetlib.js?v=r0-20260906043348';
+import { InstancePool, Boxes, Pads, loadItemAsset, assetUrl, INERT_STATES, idOf } from './boxes.js?v=r0-20260906043348';
+import { Projectiles } from './projectiles.js?v=r0-20260906043348';
+import { Hazards } from './hazards.js?v=r0-20260906043348';
 
 export const ITEMS = {
   buoy:       { asset: 'chaser_buoy',  speed: 34, lock: 60, life: 8,  hit: 'spin' },

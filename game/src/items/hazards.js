@@ -9,7 +9,7 @@
  * A hit calls onHit(targetId, byId, 'crate') on the ItemSystem, which decides spin or shield pop.
  */
 import * as THREE from 'three';
-import { InstancePool, INERT_STATES, idOf } from './boxes.js?v=r0-20260906041519';
+import { InstancePool, INERT_STATES, idOf } from './boxes.js?v=r0-20260906043348';
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler();
 

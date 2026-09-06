@@ -27,7 +27,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { getTier } from './quality.js?v=r0-20260906041519';
+import { getTier } from './quality.js?v=r0-20260906043348';
 
 /** Bloom threshold in linear HDR: lit whitewash measures 0.62 to 0.72 (work/render/NOTES.md), so only brighter pixels bloom. */
 export const BLOOM = { threshold: 0.92, strength: 0.28, radius: 0.35 };

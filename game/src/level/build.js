@@ -22,10 +22,10 @@
  * assetUrl(name) resolver, and a `materials` override for tests.
  */
 import * as THREE from 'three';
-import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r0-20260906041519';
-import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r0-20260906041519';
-import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r0-20260906041519';
-import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r0-20260906041519';
+import { ASSET, preloadAssets, bakeStatic } from '../../assetlib.js?v=r0-20260906043348';
+import { applyMaterials as renderApplyMaterials } from '../render/materials.js?v=r0-20260906043348';
+import { expandPlacements, houseWalls, SIZES, COUNTS_EXPECTED, CYLINDER_ASSETS, NO_COLLIDER, DENSITY_ASSETS, SINK, ITEM_BOXES, BOOST_PADS, countPlacements } from './placements.js?v=r0-20260906043348';
+import { FILLET_ASSETS, makeFillet } from './fillets.js?v=r0-20260906043348';
 
 const DEG2RAD = Math.PI / 180;
 const BLOCK = 30, ORIGIN_X = -210, ORIGIN_Z = -190;
@@ -179,7 +179,10 @@ export async function buildLevel(THREE_, opts) {
     }
     obj.name = p.tag;
     obj.userData.asset = p.asset;
-    applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: !!p.moving });
+    // unify stays OFF for movers too (integrator, round 0): with unify the spectator groups' crowd cards took
+    // the asset's dominant set and rendered as opaque black squares at the lower street and the piazza
+    // (rounds/r0 finish run frames 1 and 2)
+    applyMaterials(obj, { asset: p.asset, local: !!p.moving, unify: false });
     counts.set(p.asset, (counts.get(p.asset) || 0) + 1);
     assetNames.add(p.asset);
     addCollider(p, size, y);
@@ -188,7 +191,7 @@ export async function buildLevel(THREE_, opts) {
       // Movers bob as a whole (no joint is animated here), so each instance is merged per material
       // through assetlib's bakeStatic in its own local frame (integrator, round 0: 38 movers were 747
       // meshes and 693 draws from the piazza; now about one draw per material per mover).
-      obj = bakeMover(T, obj);
+      if (!/(^|[?&])nomoverbake=1/.test(typeof location !== 'undefined' ? location.search : '')) obj = bakeMover(T, obj);   // ?nomoverbake=1 is the A/B knob
       obj.name = p.tag;
       obj.userData.asset = p.asset;
       obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -236,7 +239,10 @@ export async function buildLevel(THREE_, opts) {
   for (const [key, g] of blockGroups) {
     g.updateMatrixWorld(true);
     const baked = bakeStatic(g);
-    baked.name = 'block_' + key + (key.endsWith('~fine') ? '#nocast' : '');
+    // (no '#nocast' suffix: the rig's dithered fade variant of a CARD material dropped its alpha test and
+    // the standalone bougainvillea cards drew as 3 x 4 m black squares; main.js hides the fine group by
+    // distance instead, and a pop at 140 m on props under 2 m is not visible)
+    baked.name = 'block_' + key + (key.endsWith('~fine') ? '_fine' : '');
     baked.userData.fine = key.endsWith('~fine');
     baked.userData.block = key;
     baked.userData.assets = [...blockNames.get(key)];
